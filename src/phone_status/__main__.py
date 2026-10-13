@@ -49,7 +49,6 @@ def main() -> int:
     server = make_server(settings.host, settings.port, settings.base_path, builder.build, settings.title)
 
     stop = threading.Event()
-    sampler.sample()
     periodic(stop, settings.host_interval, sampler.sample, "host-sampler")
     periodic(stop, settings.check_interval, checker.run_once, "checker")
 

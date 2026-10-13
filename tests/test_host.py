@@ -113,3 +113,15 @@ def test_sampler_degrades_when_everything_unreadable() -> None:
     assert snap["battery"] is None
     assert snap["network"] is None
     assert snap["uptime_s"] is None
+
+
+def test_sampler_ignores_resample_within_one_second() -> None:
+    f = Fake()
+    sampler = HostSampler(f.readers())
+    sampler.sample()
+    f.t += 0.01
+    f.cpu = (50, 100_000)
+    f.net = (999_999, 999_999)
+    snap = sampler.sample()
+    assert snap["cpu"]["percent"] == 25.0  # type: ignore[index]  # load fallback, no tiny-window delta
+    assert snap["network"] is None

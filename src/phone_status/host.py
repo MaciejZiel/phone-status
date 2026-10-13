@@ -187,6 +187,7 @@ class HostSampler:
         self._storage_path = storage_path
         self._lock = threading.Lock()
         self._prev_cpu: tuple[int, int] | None = None
+        self._prev_cpu_at = 0.0
         self._prev_net: tuple[float, int, int] | None = None
         self._snapshot: dict[str, object] = {}
 
@@ -196,11 +197,12 @@ class HostSampler:
 
         cpu_percent: float | None = None
         cpu = r.cpu_times()
-        if cpu and self._prev_cpu and cpu[1] > self._prev_cpu[1]:
+        if cpu and self._prev_cpu and now - self._prev_cpu_at >= 1 and cpu[1] > self._prev_cpu[1]:
             d_total = cpu[1] - self._prev_cpu[1]
             d_idle = cpu[0] - self._prev_cpu[0]
             cpu_percent = round(max(0.0, min(100.0, 100 * (1 - d_idle / d_total))), 1)
-        self._prev_cpu = cpu or self._prev_cpu
+        if cpu and (self._prev_cpu is None or now - self._prev_cpu_at >= 1):
+            self._prev_cpu, self._prev_cpu_at = cpu, now
 
         load = r.loadavg()
         cores = r.cpu_count()
@@ -210,13 +212,14 @@ class HostSampler:
         net: dict[str, float] | None = None
         counters = r.net_bytes()
         if counters:
-            if self._prev_net and now > self._prev_net[0]:
+            if self._prev_net and now - self._prev_net[0] >= 1:
                 dt = now - self._prev_net[0]
                 net = {
                     "rx_bps": max(0.0, (counters[0] - self._prev_net[1]) / dt),
                     "tx_bps": max(0.0, (counters[1] - self._prev_net[2]) / dt),
                 }
-            self._prev_net = (now, counters[0], counters[1])
+            if self._prev_net is None or now - self._prev_net[0] >= 1:
+                self._prev_net = (now, counters[0], counters[1])
 
         mem = r.memory()
         disk = r.storage(self._storage_path)
