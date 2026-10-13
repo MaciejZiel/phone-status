@@ -20,8 +20,14 @@ CONTENT_TYPES = {
     ".css": "text/css; charset=utf-8",
     ".js": "text/javascript; charset=utf-8",
     ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".png": "image/png",
 }
-STATIC_FILES = {"app.css", "app.js", "favicon.svg"}
+ICON_FILES = {"favicon.svg", "favicon.ico", "favicon-32x32.png", "apple-touch-icon.png"}
+STATIC_FILES = {"app.css", "app.js"} | ICON_FILES
+# Browsers ask for these at the site root without reading the page, so they are served there too.
+ROOT_ICONS = {"/favicon.ico": "favicon.ico", "/apple-touch-icon.png": "apple-touch-icon.png"}
+ICON_CACHE = "public, max-age=86400"
 CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
@@ -147,7 +153,11 @@ def make_server(
             elif path.startswith("/static/") and path[8:] in assets:
                 name = path[8:]
                 ctype = CONTENT_TYPES[Path(name).suffix]
-                self._send(200, assets[name], ctype, "public, max-age=300", head)
+                cache = ICON_CACHE if name in ICON_FILES else "public, max-age=300"
+                self._send(200, assets[name], ctype, cache, head)
+            elif path in ROOT_ICONS:
+                name = ROOT_ICONS[path]
+                self._send(200, assets[name], CONTENT_TYPES[Path(name).suffix], ICON_CACHE, head)
             else:
                 self._send(404, b"not found\n", "text/plain; charset=utf-8", head=head)
 

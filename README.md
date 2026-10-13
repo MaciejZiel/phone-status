@@ -84,7 +84,8 @@ Only numbers, booleans and short strings at the configured paths are shown.
 | `/` | The page |
 | `/api/status` | JSON document used by the page (`Cache-Control: public, max-age=5`) |
 | `/healthz` | Liveness probe |
-| `/static/*` | Own CSS, JS and icon |
+| `/static/*` | Own CSS, JS and icons |
+| `/favicon.ico`, `/apple-touch-icon.png` | Icons for the automatic browser requests (cached for a day) |
 
 Host sampling and service checks run in background threads; requests only read the latest snapshot and a short-lived serialised copy,
 so the page cannot be used to make the server do work.
