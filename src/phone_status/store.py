@@ -56,7 +56,9 @@ class Store:
     def latest(self, service: str) -> CheckRow | None:
         with self._lock:
             row = self._db.execute(
-                "SELECT ts, ok, latency_ms, error FROM checks WHERE service=? ORDER BY ts DESC LIMIT 1",
+                # Insertion order, not ts: a wall clock that jumped forward and back must not
+                # leave a stale "future" row as the latest result.
+                "SELECT ts, ok, latency_ms, error FROM checks WHERE service=? ORDER BY rowid DESC LIMIT 1",
                 (service,),
             ).fetchone()
         return CheckRow(row[0], bool(row[1]), row[2], row[3]) if row else None
@@ -67,13 +69,15 @@ class Store:
         size = window / count
         with self._lock:
             rows = self._db.execute(
-                "SELECT CAST((ts - ?) / ? AS INTEGER) AS b, COUNT(*), SUM(ok) "
+                # A check at exactly `now` falls into the last bucket, so clamp before grouping;
+                # clamping afterwards would let that group overwrite the last bucket.
+                "SELECT MIN(CAST((ts - ?) / ? AS INTEGER), ?) AS b, COUNT(*), SUM(ok) "
                 "FROM checks WHERE service=? AND ts >= ? AND ts <= ? GROUP BY b",
-                (start, size, service, start, now),
+                (start, size, count - 1, service, start, now),
             ).fetchall()
         result: list[float | None] = [None] * count
         for b, total, ok in rows:
-            result[min(int(b), count - 1)] = ok / total
+            result[int(b)] = ok / total
         return result
 
     def uptime_pct(self, service: str, now: float, window: float) -> float | None:
