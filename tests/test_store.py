@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from phone_status.store import DAY, Store
+from server_status.store import DAY, Store
 
 NOW = 1_000_000.0
 
