@@ -1,6 +1,13 @@
 from __future__ import annotations
 
-from server_status.checker import Checker, check_health, extract, fetch_metrics, pick_metrics
+from server_status.checker import (
+    Checker,
+    check_health,
+    describe_failure,
+    extract,
+    fetch_metrics,
+    pick_metrics,
+)
 from server_status.config import MetricField, ServiceConfig
 from server_status.store import Store
 
@@ -79,3 +86,43 @@ def test_prune_runs_at_most_hourly() -> None:
     checker.run_once()
     checker.run_once()
     assert len(calls) == 1
+
+
+def test_failed_checks_report_generic_errors_only(fake_upstream: str) -> None:
+    port = fake_upstream.rsplit(":", 1)[1]
+    secret_path = "/internal/secret-path"
+    # a server that answers 404, a port nobody listens on, a name that does not resolve, a bad URL
+    cases = {
+        f"{fake_upstream}{secret_path}": "HTTP 404",
+        f"http://127.0.0.1:1{secret_path}": "connection refused",
+        f"http://no-such-host.invalid:8123{secret_path}": "dns error",
+        "not-a-url": "unreachable",
+    }
+    for url, expected in cases.items():
+        result = check_health(url, 2)
+        assert not result.ok
+        assert result.error == expected, url
+        for leak in ("127.0.0.1", "invalid", port, "secret", "/", ":"):
+            assert leak not in result.error.replace("HTTP ", ""), (url, leak)
+
+
+def test_describe_failure_classifies_without_leaking() -> None:
+    import socket
+    import ssl
+    import urllib.error
+
+    assert describe_failure(TimeoutError("timed out")) == "timeout"
+    assert describe_failure(urllib.error.URLError("timed out")) == "timeout"
+    assert (
+        describe_failure(urllib.error.URLError(ConnectionRefusedError(111, "refused")))
+        == "connection refused"
+    )
+    assert describe_failure(ConnectionResetError("reset by 10.0.0.5:8080")) == "connection reset"
+    assert (
+        describe_failure(urllib.error.URLError(socket.gaierror(-2, "Name or service not known")))
+        == "dns error"
+    )
+    assert (
+        describe_failure(urllib.error.URLError(ssl.SSLError("bad cert for http://10.0.0.5/x"))) == "tls error"
+    )
+    assert describe_failure(OSError("cannot open /var/run/x.sock")) == "unreachable"

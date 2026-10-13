@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import logging
+import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -29,10 +31,26 @@ class CheckResult:
     error: str = ""
 
 
+def describe_failure(exc: BaseException) -> str:
+    """A short, generic reason for a failed check; never the URL, host, port or path."""
+    reason = getattr(exc, "reason", exc)
+    if isinstance(reason, TimeoutError) or (isinstance(reason, str) and "timed out" in reason):
+        return "timeout"
+    if isinstance(reason, ConnectionRefusedError):
+        return "connection refused"
+    if isinstance(reason, ConnectionResetError | ConnectionAbortedError):
+        return "connection reset"
+    if isinstance(reason, socket.gaierror):
+        return "dns error"
+    if isinstance(reason, ssl.SSLError):
+        return "tls error"
+    return "unreachable"
+
+
 def check_health(url: str, timeout: float) -> CheckResult:
-    req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     start = time.perf_counter()
     try:
+        req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             resp.read(1024)
             ok = 200 <= resp.status < 400
@@ -41,8 +59,7 @@ def check_health(url: str, timeout: float) -> CheckResult:
         exc.close()  # releases the underlying connection
         return CheckResult(False, (time.perf_counter() - start) * 1000, f"HTTP {exc.code}")
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-        reason = getattr(exc, "reason", exc)
-        return CheckResult(False, None, type(reason).__name__)
+        return CheckResult(False, None, describe_failure(exc))
 
 
 def extract(document: object, path: str) -> object:
