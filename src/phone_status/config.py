@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
@@ -80,10 +81,29 @@ class Settings:
         )
 
 
+_BASE_PATH = re.compile(r"[A-Za-z0-9._~-]+(?:/[A-Za-z0-9._~-]+)*")
+
+
 def normalize_base_path(value: str) -> str:
-    """Return '' or '/prefix' (leading slash, no trailing slash)."""
+    """Return '' or '/prefix' (leading slash, no trailing slash).
+
+    The prefix is written into the page's <base href>, so only plain URL path characters are allowed.
+    """
     value = value.strip().strip("/")
-    return f"/{value}" if value else ""
+    if not value:
+        return ""
+    if not _BASE_PATH.fullmatch(value) or any(part in (".", "..") for part in value.split("/")):
+        raise ConfigError(f"PHONE_STATUS_BASE_PATH must be a plain URL path, got {value!r}")
+    return f"/{value}"
+
+
+def _timeout(value: object, sid: str) -> float:
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ConfigError(f"service {sid!r}: timeout must be a number")
+    timeout = float(value)
+    if not 0.5 <= timeout <= 30:
+        raise ConfigError(f"service {sid!r}: timeout must be between 0.5 and 30 seconds")
+    return timeout
 
 
 def _http_url(value: object, what: str, *, required: bool) -> str:
@@ -130,7 +150,7 @@ def parse_services(data: Mapping[str, object]) -> tuple[ServiceConfig, ...]:
                 health_url=_http_url(item.get("health_url"), f"service {sid!r} health_url", required=True),
                 description=str(item.get("description", "")),
                 link=_http_url(item.get("link"), f"service {sid!r} link", required=False),
-                timeout=float(item.get("timeout", 5.0)),
+                timeout=_timeout(item.get("timeout", 5.0), sid),
                 metrics_url=metrics_url,
                 metrics=tuple(fields),
             )

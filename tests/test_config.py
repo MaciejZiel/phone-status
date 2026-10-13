@@ -40,6 +40,15 @@ def test_normalize_base_path() -> None:
     assert normalize_base_path("") == ""
     assert normalize_base_path("/") == ""
     assert normalize_base_path("/a/b/") == "/a/b"
+    for bad in ('/x"><script>', "/a/../b", "/a b", "/a?b"):
+        with pytest.raises(ConfigError):
+            normalize_base_path(bad)
+
+
+@pytest.mark.parametrize("timeout", ["5", 0, 60, True])
+def test_service_timeout_validated(timeout: object) -> None:
+    with pytest.raises(ConfigError, match="timeout"):
+        parse_services({"services": [{"name": "A", "health_url": "http://a/", "timeout": timeout}]})
 
 
 def test_parse_services_full() -> None:
