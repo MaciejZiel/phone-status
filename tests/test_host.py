@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from phone_status import host
-from phone_status.host import (
+from server_status import host
+from server_status.host import (
     Battery,
     BatteryReader,
     HostReaders,

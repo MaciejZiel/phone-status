@@ -1,0 +1,6 @@
+#!/data/data/com.termux/files/usr/bin/sh
+# Copy to ~/.termux/boot/server-status (chmod +x). Termux:Boot runs it after reboot.
+LOG="$HOME/server-status/data/service.log"
+mkdir -p "$(dirname "$LOG")"
+cd "$HOME/server-status" || exit 1
+nohup sh deploy/termux/start.sh >>"$LOG" 2>&1 &

@@ -11,19 +11,19 @@ from http.client import HTTPConnection
 
 import pytest
 
-from phone_status import server as server_module
-from phone_status.checker import Checker
-from phone_status.config import ServiceConfig
-from phone_status.host import Battery, HostReaders, HostSampler
-from phone_status.server import make_server
-from phone_status.status import StatusBuilder
-from phone_status.store import Store
+from server_status import server as server_module
+from server_status.checker import Checker
+from server_status.config import ServiceConfig
+from server_status.host import Battery, HostReaders, HostSampler
+from server_status.server import make_server
+from server_status.status import StatusBuilder
+from server_status.store import Store
 
 NOW = 5_000_000.0
 
 
 def _fake_health(url: str, timeout: float):  # type: ignore[no-untyped-def]
-    from phone_status.checker import CheckResult
+    from server_status.checker import CheckResult
 
     return CheckResult(True, 12.0) if "good" in url else CheckResult(False, None, "Timeout")
 

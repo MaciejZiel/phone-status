@@ -1,5 +1,5 @@
 [project]
-name = "phone-status"
+name = "server-status"
 version = "0.1.0"
 description = "Read-only status page for a self-hosted home server"
 readme = "README.md"

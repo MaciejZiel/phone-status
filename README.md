@@ -1,4 +1,6 @@
-# phone-status
+# server-status
+
+[![CI](https://github.com/MaciejZiel/server-status/actions/workflows/ci.yml/badge.svg)](https://github.com/MaciejZiel/server-status/actions/workflows/ci.yml)
 
 A small, read-only status page for a self-hosted home server that hosts several demo apps.
 One page, mobile-first, dark and light, no external assets.
@@ -27,7 +29,7 @@ no CDN scripts or fonts, standard library only (no runtime dependencies, Python 
 
 ```sh
 cp services.example.toml services.toml     # edit your services
-PYTHONPATH=src python3 -m phone_status      # http://127.0.0.1:8090/
+PYTHONPATH=src python3 -m server_status      # http://127.0.0.1:8090/
 ```
 
 Try it with fake services and seeded history:
@@ -42,17 +44,19 @@ Environment variables (all optional):
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `PHONE_STATUS_HOST` | `127.0.0.1` | Listen address |
-| `PHONE_STATUS_PORT` | `8090` | Listen port |
-| `PHONE_STATUS_BASE_PATH` | empty | URL prefix when served below a path, e.g. `/status` |
-| `PHONE_STATUS_TITLE` | `Home server status` | Page title |
-| `PHONE_STATUS_SERVICES_FILE` | `services.toml` | Service list |
-| `PHONE_STATUS_DB_PATH` | `data/status.sqlite` | SQLite file for check history |
-| `PHONE_STATUS_CHECK_INTERVAL` | `45` | Seconds between service checks (min 5) |
-| `PHONE_STATUS_HOST_INTERVAL` | `15` | Seconds between host samples (min 2) |
-| `PHONE_STATUS_RETENTION_DAYS` | `8` | Days of history kept (min 8) |
-| `PHONE_STATUS_STORAGE_PATH` | `~` | Path whose filesystem is shown as storage |
-| `PHONE_STATUS_LOG` | `INFO` | Log level |
+| `SERVER_STATUS_HOST` | `127.0.0.1` | Listen address |
+| `SERVER_STATUS_PORT` | `8090` | Listen port |
+| `SERVER_STATUS_BASE_PATH` | empty | URL prefix when served below a path, e.g. `/status` |
+| `SERVER_STATUS_TITLE` | `Home server status` | Page title |
+| `SERVER_STATUS_SERVICES_FILE` | `services.toml` | Service list |
+| `SERVER_STATUS_DB_PATH` | `data/status.sqlite` | SQLite file for check history |
+| `SERVER_STATUS_CHECK_INTERVAL` | `45` | Seconds between service checks (min 5) |
+| `SERVER_STATUS_HOST_INTERVAL` | `15` | Seconds between host samples (min 2) |
+| `SERVER_STATUS_RETENTION_DAYS` | `8` | Days of history kept (min 8) |
+| `SERVER_STATUS_STORAGE_PATH` | `~` | Path whose filesystem is shown as storage |
+| `SERVER_STATUS_LOG` | `INFO` | Log level |
+
+The old `PHONE_STATUS_*` names (from before the rename to server-status) are still read for one release and log a deprecation warning; `SERVER_STATUS_*` wins when both are set.
 
 Services live in a TOML file (see `services.example.toml`):
 
@@ -91,17 +95,17 @@ Files are in `deploy/termux/`.
 
 ```sh
 pkg install python git                      # termux-api is optional (battery)
-git clone https://github.com/MaciejZiel/phone-status ~/phone-status && cd ~/phone-status
+git clone https://github.com/MaciejZiel/server-status ~/server-status && cd ~/server-status
 cp services.example.toml services.toml     # edit
 cp deploy/termux/env.example deploy/termux/env
-sh deploy/termux/start.sh                   # runs python -m phone_status in the foreground
+sh deploy/termux/start.sh                   # runs python -m server_status in the foreground
 ```
 
 - `deploy/termux/start.sh` loads `deploy/termux/env`, sets `PYTHONPATH` and starts the service (it also takes a wake lock when available).
 - `deploy/termux/env.example` lists all settings. The service binds to `127.0.0.1` only.
-- `deploy/termux/nginx-phone-status.conf` is a location snippet that proxies `/status/` to the service and only allows GET/HEAD.
-  Use `PHONE_STATUS_BASE_PATH=/status` with it (the app also works when a proxy strips the prefix).
-- Autostart with Termux:Boot: copy `deploy/termux/boot-phone-status` to `~/.termux/boot/phone-status` and `chmod +x` it.
+- `deploy/termux/nginx-server-status.conf` is a location snippet that proxies `/status/` to the service and only allows GET/HEAD.
+  Use `SERVER_STATUS_BASE_PATH=/status` with it (the app also works when a proxy strips the prefix).
+- Autostart with Termux:Boot: copy `deploy/termux/boot-server-status` to `~/.termux/boot/server-status` and `chmod +x` it.
 - For the battery card install the Termux:API app and `pkg install termux-api`. Without it the sysfs fallback is tried, otherwise the card shows `n/a`.
   Battery reads are cached for a minute and back off for ten minutes when nothing answers.
 

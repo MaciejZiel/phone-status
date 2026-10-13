@@ -1,4 +1,4 @@
-"""Entry point: `python -m phone_status`."""
+"""Entry point: `python -m server_status`."""
 
 from __future__ import annotations
 
@@ -10,13 +10,13 @@ import threading
 from collections.abc import Callable
 
 from .checker import Checker
-from .config import ConfigError, load_settings
+from .config import ConfigError, env_setting, load_settings
 from .host import HostSampler
 from .server import make_server
 from .status import StatusBuilder
 from .store import Store
 
-log = logging.getLogger("phone_status")
+log = logging.getLogger("server_status")
 
 
 def periodic(stop: threading.Event, interval: float, fn: Callable[[], object], name: str) -> threading.Thread:
@@ -35,7 +35,7 @@ def periodic(stop: threading.Event, interval: float, fn: Callable[[], object], n
 
 def main() -> int:
     logging.basicConfig(
-        level=os.environ.get("PHONE_STATUS_LOG", "INFO"), format="%(asctime)s %(levelname)s %(message)s"
+        level=env_setting(os.environ, "LOG", "INFO"), format="%(asctime)s %(levelname)s %(message)s"
     )
     try:
         settings = load_settings(os.environ)

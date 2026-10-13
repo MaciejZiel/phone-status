@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from phone_status.checker import Checker, check_health, extract, fetch_metrics, pick_metrics
-from phone_status.config import MetricField, ServiceConfig
-from phone_status.store import Store
+from server_status.checker import Checker, check_health, extract, fetch_metrics, pick_metrics
+from server_status.config import MetricField, ServiceConfig
+from server_status.store import Store
 
 
 def test_check_health_ok_http_error_and_refused(fake_upstream: str) -> None:

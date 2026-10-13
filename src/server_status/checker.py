@@ -19,7 +19,7 @@ from .store import Store
 log = logging.getLogger(__name__)
 MAX_BODY = 256 * 1024
 PRUNE_EVERY = 3600.0
-USER_AGENT = f"phone-status/{__version__} (+https://github.com/MaciejZiel/phone-status)"
+USER_AGENT = f"server-status/{__version__} (+https://github.com/MaciejZiel/server-status)"
 
 
 @dataclass(frozen=True)

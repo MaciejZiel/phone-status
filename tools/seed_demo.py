@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from phone_status.store import Store
+from server_status.store import Store
 
 SERVICES = {"reroute": 0.999, "live-flights": 0.995, "plan-bot": 0.985, "pgqueue": 0.93}
 
