@@ -35,11 +35,15 @@
 
 ## What it shows
 
-- **Host**: uptime, CPU, memory, storage, battery (level, charging state, temperature) and network throughput.
+- **Host**: uptime (to the hour) and CPU, memory and storage usage rounded to 5 %.
   Every reader degrades on its own: if the system does not expose a value, that card shows `n/a` and the rest keeps working.
 - **Services**: a configurable list with up/down state, latency and 24 h / 7 d uptime bars.
   Uptime is computed from the checker's own results stored in SQLite (24 hourly buckets, 28 six-hour buckets).
 - **Metrics**: optional per-service JSON document; configure a URL and the fields to display.
+
+What the public JSON deliberately leaves out: exact byte counts, core count, load averages, network rates
+and anything about a failed check except a generic reason (`timeout`, `connection refused`, `HTTP 502`, ...; never a URL, host, port or path).
+The sampler still collects more than it serves; `status.public_host()` is the single place that decides what leaves the process.
 
 Design constraints: no secrets or internal URLs in the page or API, read-only (GET/HEAD only), cached responses, strict CSP,
 no CDN scripts or fonts, standard library only (no runtime dependencies, Python 3.12-3.14).
@@ -75,7 +79,7 @@ Environment variables (all optional):
 | `SERVER_STATUS_STORAGE_PATH` | `~` | Path whose filesystem is shown as storage |
 | `SERVER_STATUS_LOG` | `INFO` | Log level |
 
-The old `PHONE_STATUS_*` names (from before the rename to server-status) are still read for one release and log a deprecation warning; `SERVER_STATUS_*` wins when both are set.
+Environment names from before the rename to server-status (the old prefix is named in the deprecation warning) are still read for one release; `SERVER_STATUS_*` wins when both are set.
 
 Services live in a TOML file (see `services.example.toml`):
 
@@ -114,7 +118,7 @@ so the page cannot be used to make the server do work.
 Files are in `deploy/termux/`.
 
 ```sh
-pkg install python git                      # termux-api is optional (battery)
+pkg install python git
 git clone https://github.com/MaciejZiel/server-status ~/server-status && cd ~/server-status
 cp services.example.toml services.toml     # edit
 cp deploy/termux/env.example deploy/termux/env
@@ -123,11 +127,13 @@ sh deploy/termux/start.sh                   # runs python -m server_status in th
 
 - `deploy/termux/start.sh` loads `deploy/termux/env`, sets `PYTHONPATH` and starts the service (it also takes a wake lock when available).
 - `deploy/termux/env.example` lists all settings. The service binds to `127.0.0.1` only.
-- `deploy/termux/nginx-server-status.conf` is a location snippet that proxies `/status/` to the service and only allows GET/HEAD.
-  Use `SERVER_STATUS_BASE_PATH=/status` with it (the app also works when a proxy strips the prefix).
+- nginx, three files:
+  - `nginx-server-status.conf`: location snippet that proxies `/status/` to the service, only allows GET/HEAD and rate-limits
+    (10 requests/s per visitor, burst 40, then 429). Use `SERVER_STATUS_BASE_PATH=/status` with it (the app also works when a proxy strips the prefix).
+  - `nginx-zones.conf`: goes in the `http { }` block. Behind a Cloudflare Tunnel every request arrives from `127.0.0.1`, so the limit is keyed on
+    `CF-Connecting-IP` (falling back to the remote address). nginx must be reachable only through the tunnel, or that header can be forged.
+  - `nginx-headers.conf`: copy to `snippets/server-status-headers.conf`. CSP, `nosniff`, `frame-ancestors 'none'`, `Referrer-Policy`, also on nginx's own 301/429/502 responses.
 - Autostart with Termux:Boot: copy `deploy/termux/boot-server-status` to `~/.termux/boot/server-status` and `chmod +x` it.
-- For the battery card install the Termux:API app and `pkg install termux-api`. Without it the sysfs fallback is tried, otherwise the card shows `n/a`.
-  Battery reads are cached for a minute and back off for ten minutes when nothing answers.
 
 What the host readers can read on Android 16 (checked in Termux, without root):
 
@@ -138,12 +144,11 @@ What the host readers can read on Android 16 (checked in Termux, without root):
 | Load average | `getloadavg()` (bionic uses `sysinfo()`; `/proc/loadavg` itself is denied) | yes |
 | Memory | `/proc/meminfo` | yes |
 | Storage | `statvfs` on `~`, `/data` and `/sdcard` (same volume) | yes |
-| Battery | `/sys/class/power_supply` denied; needs Termux:API + `termux-api` | only with Termux:API |
-| Network | `/proc/net/dev`, `/sys/class/net` and netlink `RTM_GETLINK` are all denied | no, card shows `n/a` |
+| Network | `/proc/net/dev`, `/sys/class/net` and netlink `RTM_GETLINK` are all denied | no (collected, not published) |
 
 Hardening: the service binds to `127.0.0.1` and should only be reached through nginx. It closes connections that stay idle
-for 10 s and accepts at most 64 at a time; nginx in front absorbs slow clients, limits methods and body size, and can
-rate-limit (see the commented `limit_req` lines in the snippet). The SQLite history is pruned hourly to the retention window,
+for 10 s and accepts at most 64 at a time; nginx in front absorbs slow clients, limits methods and body size, and rate-limits per visitor (see the snippets above).
+The SQLite history is pruned hourly to the retention window,
 so the file stays at a few MB.
 
 Expected footprint (measured on a desktop, 4 services, 45 s interval): about 40 MB RSS, roughly 14 KB for the page and assets,
