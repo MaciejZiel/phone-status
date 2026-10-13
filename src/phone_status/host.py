@@ -9,7 +9,7 @@ import subprocess
 import threading
 import time
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 
@@ -108,8 +108,17 @@ def _read(path: str) -> str | None:
 def read_uptime() -> float | None:
     text = _read("/proc/uptime")
     try:
-        return parse_uptime(text) if text else None
+        if text:
+            return parse_uptime(text)
     except (ValueError, IndexError):
+        pass
+    # Android 10+ denies /proc/uptime to apps; CLOCK_BOOTTIME is the same clock and always allowed.
+    boottime = getattr(time, "CLOCK_BOOTTIME", None)
+    if boottime is None:
+        return None
+    try:
+        return round(time.clock_gettime(boottime), 2)
+    except OSError:
         return None
 
 
@@ -120,9 +129,57 @@ def read_loadavg() -> tuple[float, float, float] | None:
         return None
 
 
+def parse_cpu_list(text: str) -> set[int] | None:
+    """Parse a kernel CPU list such as '0-3,6' (as in /sys/devices/system/cpu/online)."""
+    cpus: set[int] = set()
+    try:
+        for part in text.strip().split(","):
+            if not part:
+                continue
+            lo, _, hi = part.partition("-")
+            cpus.update(range(int(lo), int(hi or lo) + 1))
+    except ValueError:
+        return None
+    return cpus or None
+
+
+CPU_SYSFS = "/sys/devices/system/cpu"
+
+
+def read_cpuidle_times(
+    base: str = CPU_SYSFS, clock_ns: Callable[[], int] = time.monotonic_ns
+) -> tuple[int, int] | None:
+    """Return (idle, total) microseconds summed over online CPUs from cpuidle residency counters.
+
+    Fallback for Android, where /proc/stat is not readable by apps but
+    /sys/devices/system/cpu/cpu*/cpuidle/state*/time is. "total" is wall time times the
+    number of CPUs, so deltas give the same busy share as /proc/stat jiffies.
+    """
+    root = Path(base)
+    online = parse_cpu_list(_read(f"{base}/online") or "")
+    idle = 0
+    cpus = 0
+    for cpu_dir in root.glob("cpu[0-9]*"):
+        index = cpu_dir.name[3:]
+        if not index.isdigit() or (online is not None and int(index) not in online):
+            continue
+        files = list(cpu_dir.glob("cpuidle/state[0-9]*/time"))
+        if not files:
+            continue
+        try:
+            idle += sum(int(f.read_text()) for f in files)
+        except (OSError, ValueError):
+            return None
+        cpus += 1
+    if not cpus:
+        return None
+    return idle, clock_ns() // 1000 * cpus
+
+
 def read_cpu_times() -> tuple[int, int] | None:
     text = _read("/proc/stat")
-    return parse_proc_stat(text) if text else None
+    parsed = parse_proc_stat(text) if text else None
+    return parsed if parsed is not None else read_cpuidle_times()
 
 
 def read_memory() -> tuple[int, int] | None:
@@ -143,16 +200,18 @@ def read_storage(path: str) -> tuple[int, int, int] | None:
     return usage.total, usage.used, usage.free
 
 
-def read_battery() -> Battery | None:
+def read_termux_battery(timeout: float = 8.0) -> Battery | None:
     exe = shutil.which("termux-battery-status")
-    if exe:
-        try:
-            out = subprocess.run([exe], capture_output=True, text=True, timeout=8, check=True).stdout
-            battery = parse_termux_battery(out)
-            if battery:
-                return battery
-        except (OSError, subprocess.SubprocessError, ValueError):
-            pass
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe], capture_output=True, text=True, timeout=timeout, check=True).stdout
+        return parse_termux_battery(out)
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return None
+
+
+def read_sysfs_battery() -> Battery | None:
     for supply in ("battery", "Battery", "bms"):
         base = f"/sys/class/power_supply/{supply}/"
         cap = _read(base + "capacity")
@@ -166,6 +225,47 @@ def read_battery() -> Battery | None:
     return None
 
 
+class BatteryReader:
+    """Reads the battery at most every `min_interval` seconds.
+
+    `termux-battery-status` talks to the Termux:API app; without the app it blocks until the
+    subprocess timeout. Calling it on every host sample would stall the sampler and keep
+    waking the app, so results are cached and failures back off for `retry_after` seconds.
+    """
+
+    def __init__(
+        self,
+        termux: Callable[[], Battery | None] = read_termux_battery,
+        sysfs: Callable[[], Battery | None] = read_sysfs_battery,
+        min_interval: float = 60.0,
+        retry_after: float = 600.0,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self._termux = termux
+        self._sysfs = sysfs
+        self._min_interval = min_interval
+        self._retry_after = retry_after
+        self._clock = clock
+        self._cached: Battery | None = None
+        self._next_read = 0.0
+        self._termux_after = 0.0
+
+    def __call__(self) -> Battery | None:
+        now = self._clock()
+        if now < self._next_read:
+            return self._cached
+        battery = None
+        if now >= self._termux_after:
+            battery = self._termux()
+            if battery is None:
+                self._termux_after = now + self._retry_after
+        if battery is None:
+            battery = self._sysfs()
+        self._cached = battery
+        self._next_read = now + (self._min_interval if battery else self._retry_after)
+        return battery
+
+
 @dataclass
 class HostReaders:
     uptime: Callable[[], float | None] = read_uptime
@@ -174,7 +274,7 @@ class HostReaders:
     memory: Callable[[], tuple[int, int] | None] = read_memory
     net_bytes: Callable[[], tuple[int, int] | None] = read_net_bytes
     storage: Callable[[str], tuple[int, int, int] | None] = read_storage
-    battery: Callable[[], Battery | None] = read_battery
+    battery: Callable[[], Battery | None] = field(default_factory=BatteryReader)
     cpu_count: Callable[[], int | None] = os.cpu_count
     clock: Callable[[], float] = time.monotonic
 
@@ -209,9 +309,11 @@ class HostSampler:
         if cpu_percent is None and load and cores:
             cpu_percent = round(min(100.0, 100 * load[0] / cores), 1)
 
-        net: dict[str, float] | None = None
+        # None = counters unreadable (e.g. Android denies /proc/net/dev); None rates = first sample.
+        net: dict[str, float | None] | None = None
         counters = r.net_bytes()
         if counters:
+            net = {"rx_bps": None, "tx_bps": None}
             if self._prev_net and now - self._prev_net[0] >= 1:
                 dt = now - self._prev_net[0]
                 net = {

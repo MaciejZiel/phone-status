@@ -82,8 +82,9 @@
       out.push(stat("Battery", NA, "", "no reader available"));
     }
     const n = host.network;
-    out.push(n ? stat("Network", rate(n.rx_bps), "down", `${rate(n.tx_bps)} up`)
-      : stat("Network", NA, "", "measuring…"));
+    if (!n) out.push(stat("Network", NA, "", "not readable on this host"));
+    else if (n.rx_bps == null) out.push(stat("Network", "…", "", "measuring"));
+    else out.push(stat("Network", rate(n.rx_bps), "down", `${rate(n.tx_bps)} up`));
     $("host").replaceChildren(...out);
   }
 
