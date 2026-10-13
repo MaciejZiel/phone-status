@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from typing import Any
@@ -12,6 +13,20 @@ from .store import DAY, Store
 
 HOURLY_BUCKETS = 24
 WEEK_BUCKETS = 28  # 6 h each
+
+# What the public document may say about a failed check. Anything else becomes GENERIC_ERROR,
+# so a message that carries a URL, host:port or path (e.g. from an older database row) never leaks.
+GENERIC_ERROR = "unreachable"
+KNOWN_ERRORS = frozenset(
+    {"timeout", "connection refused", "connection reset", "dns error", "tls error", GENERIC_ERROR}
+)
+_HTTP_ERROR = re.compile(r"HTTP [1-5]\d\d")
+
+
+def public_error(error: str) -> str:
+    if error in KNOWN_ERRORS or _HTTP_ERROR.fullmatch(error):
+        return error
+    return GENERIC_ERROR
 
 
 class StatusBuilder:
@@ -64,7 +79,7 @@ class StatusBuilder:
             "link": svc.link,
             "state": state,
             "latency_ms": round(last.latency_ms, 1) if last and last.latency_ms is not None else None,
-            "error": last.error if last and not last.ok else "",
+            "error": public_error(last.error) if last and not last.ok else "",
             "checked_at": last.ts if last else None,
             "avg_latency_ms_24h": self._store.avg_latency(svc.id, now, DAY),
             "uptime_24h": self._store.uptime_pct(svc.id, now, DAY),

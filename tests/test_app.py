@@ -25,7 +25,7 @@ NOW = 5_000_000.0
 def _fake_health(url: str, timeout: float):  # type: ignore[no-untyped-def]
     from server_status.checker import CheckResult
 
-    return CheckResult(True, 12.0) if "good" in url else CheckResult(False, None, "Timeout")
+    return CheckResult(True, 12.0) if "good" in url else CheckResult(False, None, "timeout")
 
 
 @pytest.fixture
@@ -85,7 +85,7 @@ def test_status_document(addr: tuple[str, int]) -> None:
     assert len(good["bars_24h"]) == 24
     assert len(good["bars_7d"]) == 28
     assert bad["state"] == "down"
-    assert bad["error"] == "Timeout"
+    assert bad["error"] == "timeout"
     assert doc["host"]["battery"]["percent"] == 50.0
 
 
@@ -93,6 +93,24 @@ def test_no_secrets_in_document(addr: tuple[str, int]) -> None:
     _, _, body = _get(addr, "/api/status")
     text = body.decode()
     assert "http://good/h" not in text  # health URLs stay private
+
+
+def test_down_service_error_is_generic_even_for_old_rows() -> None:
+    from server_status.checker import CheckResult
+
+    leaky = "URLError: <urlopen error [Errno 111] Connection refused> http://10.0.0.5:8081/internal/health"
+
+    def health(url: str, timeout: float) -> CheckResult:
+        return CheckResult(False, None, leaky) if "old" in url else CheckResult(False, None, "HTTP 502")
+
+    store = Store(":memory:")
+    services = (ServiceConfig("old", "Old", "http://old/h"), ServiceConfig("new", "New", "http://new/h"))
+    checker = Checker(services, store, 8, health=health, clock=lambda: NOW)
+    checker.run_once()
+    doc = StatusBuilder("t", HostSampler(HostReaders()), checker, store, 45.0, clock=lambda: NOW + 1).build()
+    errors = {s["id"]: s["error"] for s in doc["services"]}
+    assert errors == {"old": "unreachable", "new": "HTTP 502"}
+    assert "10.0.0.5" not in json.dumps(doc)
 
 
 def test_index_and_static(addr: tuple[str, int]) -> None:
