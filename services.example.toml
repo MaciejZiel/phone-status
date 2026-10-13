@@ -1,0 +1,39 @@
+# Copy to services.toml (or point PHONE_STATUS_SERVICES_FILE at it) and edit.
+# health_url: any 2xx/3xx answer counts as up. metrics_url + [[services.metrics]]
+# optionally show values from a JSON document (dotted path, list indexes allowed).
+
+[[services]]
+id = "reroute"
+name = "Reroute"
+description = "Public transport delay observations"
+health_url = "http://127.0.0.1:8081/health"
+link = "https://example.com/reroute/"
+metrics_url = "http://127.0.0.1:8081/api/stats"
+
+[[services.metrics]]
+path = "observations.today"
+label = "Observations today"
+
+[[services.metrics]]
+path = "lag_s"
+label = "Lag"
+unit = "s"
+
+[[services]]
+id = "live-flights"
+name = "Live Flights"
+description = "Live aircraft map"
+health_url = "http://127.0.0.1:8082/healthz"
+link = "https://example.com/flights/"
+
+[[services]]
+id = "plan-bot"
+name = "plan-bot"
+description = "Planning assistant bot"
+health_url = "http://127.0.0.1:8083/health"
+
+[[services]]
+id = "pgqueue"
+name = "pgqueue demo"
+description = "PostgreSQL job queue demo"
+health_url = "http://127.0.0.1:8084/health"

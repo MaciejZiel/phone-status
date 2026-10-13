@@ -1,0 +1,35 @@
+[[services]]
+id = "reroute"
+name = "Reroute"
+description = "Public transport delay observations"
+health_url = "http://127.0.0.1:8191/reroute/health"
+link = "https://example.com/reroute/"
+metrics_url = "http://127.0.0.1:8191/reroute/metrics"
+
+[[services.metrics]]
+path = "observations.today"
+label = "Observations today"
+
+[[services.metrics]]
+path = "lag_s"
+label = "Lag"
+unit = "s"
+
+[[services]]
+id = "live-flights"
+name = "Live Flights"
+description = "Live aircraft map"
+health_url = "http://127.0.0.1:8191/flights/health"
+link = "https://example.com/flights/"
+
+[[services]]
+id = "plan-bot"
+name = "plan-bot"
+description = "Planning assistant bot"
+health_url = "http://127.0.0.1:8191/planbot/health"
+
+[[services]]
+id = "pgqueue"
+name = "pgqueue demo"
+description = "PostgreSQL job queue demo"
+health_url = "http://127.0.0.1:8191/pgqueue/health"
