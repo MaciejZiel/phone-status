@@ -11,5 +11,5 @@ mkdir -p data
 FAKE=$!
 trap 'kill $FAKE' EXIT INT TERM
 PYTHONPATH=src PHONE_STATUS_PORT=8190 PHONE_STATUS_DB_PATH=data/demo.sqlite \
-  PHONE_STATUS_SERVICES_FILE=tools/demo-services.toml PHONE_STATUS_TITLE="Pixel 6 status" \
+  PHONE_STATUS_SERVICES_FILE=tools/demo-services.toml PHONE_STATUS_TITLE="Home server status" \
   "$PY" -m phone_status

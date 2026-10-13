@@ -1,7 +1,7 @@
 [project]
 name = "phone-status"
 version = "0.1.0"
-description = "Read-only status page for a self-hosted phone server"
+description = "Read-only status page for a self-hosted home server"
 readme = "README.md"
 requires-python = ">=3.12"
 license = "MIT"

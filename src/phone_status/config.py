@@ -46,7 +46,7 @@ class Settings:
     host_interval: float = 15.0
     retention_days: int = 8
     storage_path: str = "~"
-    title: str = "Phone server status"
+    title: str = "Home server status"
     services: tuple[ServiceConfig, ...] = field(default=(), compare=False)
 
     @classmethod
@@ -77,7 +77,7 @@ class Settings:
             host_interval=host_interval,
             retention_days=retention,
             storage_path=get("STORAGE_PATH", "~"),
-            title=get("TITLE", "Phone server status"),
+            title=get("TITLE", "Home server status"),
         )
 
 
