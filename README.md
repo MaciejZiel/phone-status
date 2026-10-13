@@ -33,7 +33,7 @@
 
 <p align="center"><sub>Taken with <code>playwright-cli</code> against a local run with fake services (<code>tools/run_demo.sh</code>). Desktop: dark or light, following your GitHub theme.</sub></p>
 
-## ✨ What it shows
+## What it shows
 
 - **Host**: uptime, CPU, memory, storage, battery (level, charging state, temperature) and network throughput.
   Every reader degrades on its own: if the system does not expose a value, that card shows `n/a` and the rest keeps working.
@@ -44,7 +44,7 @@
 Design constraints: no secrets or internal URLs in the page or API, read-only (GET/HEAD only), cached responses, strict CSP,
 no CDN scripts or fonts, standard library only (no runtime dependencies, Python 3.12-3.14).
 
-## 🚀 Quick start
+## Quick start
 
 ```sh
 cp services.example.toml services.toml     # edit your services
@@ -57,7 +57,7 @@ Try it with fake services and seeded history:
 tools/run_demo.sh                           # http://127.0.0.1:8190/
 ```
 
-## 🔧 Configuration
+## Configuration
 
 Environment variables (all optional):
 
@@ -96,7 +96,7 @@ unit = ""
 
 Only numbers, booleans and short strings at the configured paths are shown.
 
-## 🔌 HTTP interface
+## HTTP interface
 
 | Path | Description |
 | --- | --- |
@@ -109,7 +109,7 @@ Only numbers, booleans and short strings at the configured paths are shown.
 Host sampling and service checks run in background threads; requests only read the latest snapshot and a short-lived serialised copy,
 so the page cannot be used to make the server do work.
 
-## 🏠 Self-hosting on Termux
+## Self-hosting on Termux
 
 Files are in `deploy/termux/`.
 
@@ -149,7 +149,7 @@ so the file stays at a few MB.
 Expected footprint (measured on a desktop, 4 services, 45 s interval): about 40 MB RSS, roughly 14 KB for the page and assets,
 4 KB for the JSON, about 1.5 ms per API request, and a few MB of SQLite for 8 days of history.
 
-## 🛠 Tech stack
+## Tech stack
 
 | Layer | Used |
 |---|---|
@@ -158,7 +158,7 @@ Expected footprint (measured on a desktop, 4 services, 45 s interval): about 40 
 | Page | Own CSS, JS and icons, no CDN scripts or fonts |
 | Quality | pytest, ruff, pyright, GitHub Actions |
 
-## 🧪 Development
+## Development
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
@@ -172,6 +172,6 @@ against local servers on random ports. CI runs the same commands on Python 3.12,
 
 Third-party components (development tools only) are listed in `3rdparty_licenses.md`.
 
-## 📄 Licence
+## Licence
 
 MIT, see `LICENSE`.
