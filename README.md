@@ -1,20 +1,39 @@
-# server-status
-
-[![CI](https://github.com/MaciejZiel/server-status/actions/workflows/ci.yml/badge.svg)](https://github.com/MaciejZiel/server-status/actions/workflows/ci.yml)
-
-A small, read-only status page for a self-hosted home server that hosts several demo apps.
-One page, mobile-first, dark and light, no external assets.
-
-![Dark theme, desktop](docs/screenshots/desktop-dark.png)
-
-<p>
-  <img src="docs/screenshots/mobile-dark.png" alt="Mobile, dark theme" width="260">
-  <img src="docs/screenshots/desktop-light.png" alt="Desktop, light theme" width="560">
+<p align="center">
+  <img src="docs/logo.svg" width="72" height="72" alt="server-status logo">
 </p>
 
-The screenshots were taken with `playwright-cli` against a local run with fake services (`tools/run_demo.sh`).
+<h1 align="center">server-status</h1>
 
-## What it shows
+<p align="center">
+  <b>A small, read-only status page for a self-hosted home server that hosts several demo apps.</b>
+</p>
+
+<p align="center">
+  <a href="https://status.maciejzielinski.dev">Live status</a> · <a href="https://maciejzielinski.dev">Portfolio</a>
+</p>
+
+<p align="center">
+  <a href="https://github.com/MaciejZiel/server-status/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/MaciejZiel/server-status/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="LICENSE"><img alt="Licence: MIT" src="https://img.shields.io/badge/licence-MIT-blue"></a>
+  <img alt="Python 3.12 to 3.14" src="https://img.shields.io/badge/python-3.12%E2%80%933.14-3776AB?logo=python&logoColor=white">
+</p>
+
+<p align="center">One page, mobile-first, dark and light, no external assets.</p>
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/desktop-dark.png">
+    <img src="docs/screenshots/desktop-light.png" width="860" alt="The status page on desktop: host card, services with uptime bars">
+  </picture>
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mobile-dark.png" width="260" alt="Mobile, dark theme">
+</p>
+
+<p align="center"><sub>Taken with <code>playwright-cli</code> against a local run with fake services (<code>tools/run_demo.sh</code>). Desktop: dark or light, following your GitHub theme.</sub></p>
+
+## ✨ What it shows
 
 - **Host**: uptime, CPU, memory, storage, battery (level, charging state, temperature) and network throughput.
   Every reader degrades on its own: if the system does not expose a value, that card shows `n/a` and the rest keeps working.
@@ -25,7 +44,7 @@ The screenshots were taken with `playwright-cli` against a local run with fake s
 Design constraints: no secrets or internal URLs in the page or API, read-only (GET/HEAD only), cached responses, strict CSP,
 no CDN scripts or fonts, standard library only (no runtime dependencies, Python 3.12-3.14).
 
-## Quick start
+## 🚀 Quick start
 
 ```sh
 cp services.example.toml services.toml     # edit your services
@@ -38,7 +57,7 @@ Try it with fake services and seeded history:
 tools/run_demo.sh                           # http://127.0.0.1:8190/
 ```
 
-## Configuration
+## 🔧 Configuration
 
 Environment variables (all optional):
 
@@ -77,7 +96,7 @@ unit = ""
 
 Only numbers, booleans and short strings at the configured paths are shown.
 
-## HTTP interface
+## 🔌 HTTP interface
 
 | Path | Description |
 | --- | --- |
@@ -90,7 +109,7 @@ Only numbers, booleans and short strings at the configured paths are shown.
 Host sampling and service checks run in background threads; requests only read the latest snapshot and a short-lived serialised copy,
 so the page cannot be used to make the server do work.
 
-## Self-hosting on Termux
+## 🏠 Self-hosting on Termux
 
 Files are in `deploy/termux/`.
 
@@ -130,7 +149,16 @@ so the file stays at a few MB.
 Expected footprint (measured on a desktop, 4 services, 45 s interval): about 40 MB RSS, roughly 14 KB for the page and assets,
 4 KB for the JSON, about 1.5 ms per API request, and a few MB of SQLite for 8 days of history.
 
-## Development
+## 🛠 Tech stack
+
+| Layer | Used |
+|---|---|
+| Runtime | Python 3.12 to 3.14, standard library only |
+| Storage | SQLite (check history) |
+| Page | Own CSS, JS and icons, no CDN scripts or fonts |
+| Quality | pytest, ruff, pyright, GitHub Actions |
+
+## 🧪 Development
 
 ```sh
 python3 -m venv .venv && .venv/bin/pip install -r requirements-dev.txt
@@ -144,6 +172,6 @@ against local servers on random ports. CI runs the same commands on Python 3.12,
 
 Third-party components (development tools only) are listed in `3rdparty_licenses.md`.
 
-## License
+## 📄 Licence
 
 MIT, see `LICENSE`.
