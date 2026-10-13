@@ -16,7 +16,7 @@ from server_status.checker import Checker
 from server_status.config import ServiceConfig
 from server_status.host import Battery, HostReaders, HostSampler
 from server_status.server import make_server
-from server_status.status import StatusBuilder
+from server_status.status import StatusBuilder, public_host
 from server_status.store import Store
 
 NOW = 5_000_000.0
@@ -25,7 +25,7 @@ NOW = 5_000_000.0
 def _fake_health(url: str, timeout: float):  # type: ignore[no-untyped-def]
     from server_status.checker import CheckResult
 
-    return CheckResult(True, 12.0) if "good" in url else CheckResult(False, None, "Timeout")
+    return CheckResult(True, 12.0) if "good" in url else CheckResult(False, None, "timeout")
 
 
 @pytest.fixture
@@ -85,14 +85,58 @@ def test_status_document(addr: tuple[str, int]) -> None:
     assert len(good["bars_24h"]) == 24
     assert len(good["bars_7d"]) == 28
     assert bad["state"] == "down"
-    assert bad["error"] == "Timeout"
-    assert doc["host"]["battery"]["percent"] == 50.0
+    assert bad["error"] == "timeout"
+    # coarse figures only: no battery, exact bytes, core count, load average or network rates
+    assert set(doc["host"]) == {"uptime_s", "cpu_percent", "memory_percent", "storage_percent"}
 
 
 def test_no_secrets_in_document(addr: tuple[str, int]) -> None:
     _, _, body = _get(addr, "/api/status")
     text = body.decode()
     assert "http://good/h" not in text  # health URLs stay private
+    for word in ("battery", "phone", "temperature", "charging", "cores", "load"):
+        assert word not in text.lower()
+
+
+def test_public_host_rounds_and_drops() -> None:
+    snap = {
+        "uptime_s": 190_000.7,
+        "cpu": {"percent": 37.4, "load": [1.0, 0.5, 0.2], "cores": 8},
+        "memory": {"total": 8_000_000_000, "available": 1, "used": 5_100_000_000},
+        "storage": {"total": 100, "used": 99, "free": 1},
+        "battery": {"percent": 80.0, "status": "charging", "charging": True, "temperature_c": 31.0},
+        "network": {"rx_bps": 1234.0, "tx_bps": 5.0},
+    }
+    assert public_host(snap) == {
+        "uptime_s": 187_200,  # 52 h
+        "cpu_percent": 35,
+        "memory_percent": 65,
+        "storage_percent": 100,
+    }
+    assert public_host({}) == {
+        "uptime_s": None,
+        "cpu_percent": None,
+        "memory_percent": None,
+        "storage_percent": None,
+    }
+
+
+def test_down_service_error_is_generic_even_for_old_rows() -> None:
+    from server_status.checker import CheckResult
+
+    leaky = "URLError: <urlopen error [Errno 111] Connection refused> http://10.0.0.5:8081/internal/health"
+
+    def health(url: str, timeout: float) -> CheckResult:
+        return CheckResult(False, None, leaky) if "old" in url else CheckResult(False, None, "HTTP 502")
+
+    store = Store(":memory:")
+    services = (ServiceConfig("old", "Old", "http://old/h"), ServiceConfig("new", "New", "http://new/h"))
+    checker = Checker(services, store, 8, health=health, clock=lambda: NOW)
+    checker.run_once()
+    doc = StatusBuilder("t", HostSampler(HostReaders()), checker, store, 45.0, clock=lambda: NOW + 1).build()
+    errors = {s["id"]: s["error"] for s in doc["services"]}
+    assert errors == {"old": "unreachable", "new": "HTTP 502"}
+    assert "10.0.0.5" not in json.dumps(doc)
 
 
 def test_index_and_static(addr: tuple[str, int]) -> None:
@@ -216,3 +260,11 @@ def test_build_failure_returns_503() -> None:
         assert _get((host, port), "/healthz")[0] == 200
     finally:
         stop()
+
+
+def test_page_assets_do_not_mention_battery_or_phone(addr: tuple[str, int]) -> None:
+    for path in ("/", "/static/app.js", "/static/app.css"):
+        _, _, body = _get(addr, path)
+        text = body.decode().lower()
+        assert "battery" not in text, path
+        assert "phone" not in text, path

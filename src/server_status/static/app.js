@@ -30,17 +30,6 @@
     return el;
   };
   const nf = new Intl.NumberFormat(undefined, { maximumFractionDigits: 1 });
-  const bytes = (n) => {
-    const units = ["B", "KB", "MB", "GB", "TB"];
-    let i = 0;
-    while (n >= 1024 && i < units.length - 1) { n /= 1024; i++; }
-    return `${nf.format(n)} ${units[i]}`;
-  };
-  const rate = (n) => `${bytes(n)}/s`;
-  const duration = (s) => {
-    const d = Math.floor(s / 86400), hr = Math.floor((s % 86400) / 3600), m = Math.floor((s % 3600) / 60);
-    return d ? `${d}d ${hr}h` : hr ? `${hr}h ${m}m` : `${m}m`;
-  };
   const ago = (ts) => {
     const s = Math.max(0, Math.round(Date.now() / 1000 - ts));
     return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`;
@@ -66,29 +55,16 @@
 
   function renderHost(host) {
     const out = [];
-    out.push(stat("Uptime", host.uptime_s != null ? duration(host.uptime_s) : NA, "", "since last boot"));
-    const cpu = host.cpu || {};
-    out.push(stat("CPU", cpu.percent != null ? nf.format(cpu.percent) : NA, cpu.percent != null ? "%" : "",
-      cpu.load ? `load ${cpu.load.map((x) => x.toFixed(2)).join(" ")}` : `${cpu.cores || "?"} cores`, cpu.percent));
-    const m = host.memory;
-    out.push(m ? stat("Memory", bytes(m.used), "", `of ${bytes(m.total)}`, (100 * m.used) / m.total)
-      : stat("Memory", NA, "", "unreadable"));
-    const d = host.storage;
-    out.push(d ? stat("Storage", bytes(d.used), "", `${bytes(d.free)} free of ${bytes(d.total)}`, (100 * d.used) / d.total)
-      : stat("Storage", NA, "", "unreadable"));
-    const b = host.battery;
-    if (b) {
-      const state = b.charging ? "charging" : String(b.status).replace(/_/g, " ");
-      const temp = b.temperature_c != null ? ` · ${nf.format(b.temperature_c)} °C` : "";
-      out.push(stat("Battery", b.percent != null ? nf.format(b.percent) : NA, "%", state + temp,
-        b.percent, true));
-    } else {
-      out.push(stat("Battery", NA, "", "no reader available"));
-    }
-    const n = host.network;
-    if (!n) out.push(stat("Network", NA, "", "not readable on this host"));
-    else if (n.rx_bps == null) out.push(stat("Network", "…", "", "measuring"));
-    else out.push(stat("Network", rate(n.rx_bps), "down", `${rate(n.tx_bps)} up`));
+    const uptimeLabel = (s) => {
+      const d = Math.floor(s / 86400), hr = Math.floor((s % 86400) / 3600);
+      return d ? `${d}d ${hr}h` : hr ? `${hr}h` : "<1h";
+    };
+    out.push(stat("Uptime", host.uptime_s != null ? uptimeLabel(host.uptime_s) : NA, "", "since last boot"));
+    const usage = (label, pct, sub) => out.push(pct != null
+      ? stat(label, `~${pct}`, "%", sub, pct) : stat(label, NA, "", "unreadable"));
+    usage("CPU", host.cpu_percent, "rounded to 5 %");
+    usage("Memory", host.memory_percent, "in use");
+    usage("Storage", host.storage_percent, "in use");
     $("host").replaceChildren(...out);
   }
 
