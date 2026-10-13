@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
+import logging
 import re
 import tomllib
 from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from urllib.parse import urlparse
+
+log = logging.getLogger(__name__)
+
+ENV_PREFIX = "SERVER_STATUS_"
+LEGACY_ENV_PREFIX = "PHONE_STATUS_"  # deprecated, still read for one release
+
+
+def env_setting(env: Mapping[str, str], name: str, default: str) -> str:
+    """Read SERVER_STATUS_<name>, falling back to the deprecated PHONE_STATUS_<name> with a warning."""
+    value = env.get(f"{ENV_PREFIX}{name}")
+    if value is not None:
+        return value
+    legacy = env.get(f"{LEGACY_ENV_PREFIX}{name}")
+    if legacy is not None:
+        log.warning(
+            "%s%s is deprecated and will be removed in the next release; use %s%s",
+            LEGACY_ENV_PREFIX,
+            name,
+            ENV_PREFIX,
+            name,
+        )
+        return legacy
+    return default
 
 
 class ConfigError(ValueError):
@@ -52,7 +76,7 @@ class Settings:
     @classmethod
     def from_env(cls, env: Mapping[str, str]) -> Settings:
         def get(name: str, default: str) -> str:
-            return env.get(f"PHONE_STATUS_{name}", default)
+            return env_setting(env, name, default)
 
         try:
             port = int(get("PORT", "8090"))
@@ -62,11 +86,11 @@ class Settings:
         except ValueError as exc:
             raise ConfigError(f"invalid numeric setting: {exc}") from exc
         if not 0 <= port <= 65535:
-            raise ConfigError("PHONE_STATUS_PORT out of range")
+            raise ConfigError("SERVER_STATUS_PORT out of range")
         if check_interval < 5 or host_interval < 2:
             raise ConfigError("intervals too small (check >= 5 s, host >= 2 s)")
         if retention < 8:
-            raise ConfigError("PHONE_STATUS_RETENTION_DAYS must be at least 8 (7 d uptime bars)")
+            raise ConfigError("SERVER_STATUS_RETENTION_DAYS must be at least 8 (7 d uptime bars)")
         return cls(
             host=get("HOST", "127.0.0.1"),
             port=port,
@@ -93,7 +117,7 @@ def normalize_base_path(value: str) -> str:
     if not value:
         return ""
     if not _BASE_PATH.fullmatch(value) or any(part in (".", "..") for part in value.split("/")):
-        raise ConfigError(f"PHONE_STATUS_BASE_PATH must be a plain URL path, got {value!r}")
+        raise ConfigError(f"SERVER_STATUS_BASE_PATH must be a plain URL path, got {value!r}")
     return f"/{value}"
 
 

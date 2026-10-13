@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from phone_status.config import (
+from server_status.config import (
     ConfigError,
     Settings,
     load_services,
@@ -17,7 +17,7 @@ def test_defaults() -> None:
 
 
 def test_env_overrides() -> None:
-    s = Settings.from_env({"PHONE_STATUS_PORT": "9000", "PHONE_STATUS_BASE_PATH": "status/"})
+    s = Settings.from_env({"SERVER_STATUS_PORT": "9000", "SERVER_STATUS_BASE_PATH": "status/"})
     assert s.port == 9000
     assert s.base_path == "/status"
 
@@ -25,10 +25,10 @@ def test_env_overrides() -> None:
 @pytest.mark.parametrize(
     "env",
     [
-        {"PHONE_STATUS_PORT": "abc"},
-        {"PHONE_STATUS_PORT": "70000"},
-        {"PHONE_STATUS_CHECK_INTERVAL": "1"},
-        {"PHONE_STATUS_RETENTION_DAYS": "3"},
+        {"SERVER_STATUS_PORT": "abc"},
+        {"SERVER_STATUS_PORT": "70000"},
+        {"SERVER_STATUS_CHECK_INTERVAL": "1"},
+        {"SERVER_STATUS_RETENTION_DAYS": "3"},
     ],
 )
 def test_invalid_env(env: dict[str, str]) -> None:
@@ -103,3 +103,18 @@ def test_example_file_is_valid() -> None:
     root = Path(__file__).parent.parent
     assert len(load_services(root / "services.example.toml")) == 4
     assert len(load_services(root / "tools" / "demo-services.toml")) == 4
+
+
+def test_legacy_env_prefix_still_read_with_warning(caplog):
+    with caplog.at_level("WARNING"):
+        s = Settings.from_env({"PHONE_STATUS_PORT": "9100"})
+    assert s.port == 9100
+    assert "PHONE_STATUS_PORT is deprecated" in caplog.text
+    assert "SERVER_STATUS_PORT" in caplog.text
+
+
+def test_new_env_prefix_wins_over_legacy(caplog):
+    with caplog.at_level("WARNING"):
+        s = Settings.from_env({"SERVER_STATUS_PORT": "9200", "PHONE_STATUS_PORT": "9100"})
+    assert s.port == 9200
+    assert "deprecated" not in caplog.text
