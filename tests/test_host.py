@@ -234,3 +234,79 @@ def test_battery_reader_without_any_source_retries_slowly() -> None:
     clock["t"] = 300
     assert reader() is None
     assert calls["n"] == 2  # one termux and one sysfs attempt, nothing until the retry window
+
+
+def test_loadavg_uses_os_when_present(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(host.os, "getloadavg", lambda: (1.0, 2.0, 3.0), raising=False)
+    assert host.read_loadavg() == (1.0, 2.0, 3.0)
+
+
+def test_loadavg_falls_back_to_libc_without_os_getloadavg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(host.os, "getloadavg", raising=False)
+    monkeypatch.setattr(host, "_libc_getloadavg", lambda: (0.1, 0.2, 0.3))
+    assert host.read_loadavg() == (0.1, 0.2, 0.3)
+
+
+@pytest.mark.skipif(not hasattr(host.os, "getloadavg"), reason="needs a reference os.getloadavg")
+def test_libc_getloadavg_matches_os(monkeypatch: pytest.MonkeyPatch) -> None:
+    libc = host._libc_getloadavg()
+    assert libc is not None
+    assert len(libc) == 3
+    assert all(v >= 0 for v in libc)
+
+
+def test_loadavg_is_none_when_nothing_works(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(host.os, "getloadavg", raising=False)
+
+    def broken() -> tuple[float, float, float] | None:
+        raise OSError("no libc")
+
+    monkeypatch.setattr(host, "_libc_getloadavg", broken)
+    assert host.read_loadavg() is None
+    monkeypatch.setattr(host, "_libc_getloadavg", lambda: None)
+    assert host.read_loadavg() is None
+
+
+def test_sampler_survives_missing_os_getloadavg(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delattr(host.os, "getloadavg", raising=False)
+    monkeypatch.setattr(host, "_libc_getloadavg", lambda: None)
+    snap = HostSampler(HostReaders()).sample()  # real readers, Termux-like Python
+    assert snap["cpu"]["load"] is None  # type: ignore[index]
+    assert "memory" in snap
+    assert "uptime_s" in snap
+
+
+_FIELDS = {
+    "uptime": lambda s: s["uptime_s"],
+    "loadavg": lambda s: s["cpu"]["load"],
+    "cpu_times": lambda s: s["cpu"]["percent"],
+    "cpu_count": lambda s: s["cpu"]["cores"],
+    "memory": lambda s: s["memory"],
+    "net_bytes": lambda s: s["network"],
+    "storage": lambda s: s["storage"],
+    "battery": lambda s: s["battery"],
+}
+
+
+@pytest.mark.parametrize("exc", [AttributeError("x"), OSError("x"), ValueError("x"), RuntimeError("x")])
+@pytest.mark.parametrize("reader", list(_FIELDS))
+def test_failing_reader_only_blanks_its_own_field(reader: str, exc: Exception) -> None:
+    def boom(*_a: object) -> None:
+        raise exc
+
+    healthy = HostSampler(Fake().readers()).sample()
+    readers = Fake().readers()
+    setattr(readers, reader, boom)
+    snap = HostSampler(readers).sample()
+    assert snap, "sample must still return a populated snapshot"
+    for name, get in _FIELDS.items():
+        if name == reader:
+            continue
+        if reader == "loadavg" and name == "cpu_times":
+            continue
+        if reader == "cpu_count" and name == "cpu_times":
+            continue
+        assert get(snap) == get(healthy), f"{name} changed when {reader} failed"
+    # the failing reader's own field is blank (cpu percent may fall back from the other source)
+    if reader not in ("cpu_times", "loadavg", "cpu_count"):
+        assert _FIELDS[reader](snap) is None

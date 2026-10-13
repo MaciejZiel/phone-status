@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import ctypes
 import json
+import logging
 import os
 import shutil
 import subprocess
@@ -11,6 +13,8 @@ import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -122,10 +126,29 @@ def read_uptime() -> float | None:
         return None
 
 
+def _libc_getloadavg() -> tuple[float, float, float] | None:
+    """Call libc getloadavg(3) directly (Python builds without os.getloadavg, e.g. Termux)."""
+    libc = ctypes.CDLL(None)
+    fn = getattr(libc, "getloadavg", None)
+    if fn is None:
+        return None
+    buf = (ctypes.c_double * 3)()
+    if fn(buf, 3) != 3:
+        return None
+    return buf[0], buf[1], buf[2]
+
+
 def read_loadavg() -> tuple[float, float, float] | None:
+    """Load average via os.getloadavg, else libc getloadavg through ctypes, else None."""
+    getter = getattr(os, "getloadavg", None)
+    if getter is not None:
+        try:
+            return getter()
+        except OSError:
+            return None
     try:
-        return os.getloadavg()
-    except OSError:
+        return _libc_getloadavg()
+    except (OSError, AttributeError, TypeError, ValueError):
         return None
 
 
@@ -279,6 +302,15 @@ class HostReaders:
     clock: Callable[[], float] = time.monotonic
 
 
+def _guard[T](name: str, fn: Callable[..., T | None], *args: object) -> T | None:
+    """Run one reader; any failure is logged and turns into None so it only blanks its own field."""
+    try:
+        return fn(*args)
+    except Exception as exc:
+        log.warning("host reader %s failed: %s: %s", name, type(exc).__name__, exc)
+        return None
+
+
 class HostSampler:
     """Samples the host periodically; `snapshot()` returns the last JSON-ready result."""
 
@@ -296,7 +328,7 @@ class HostSampler:
         now = r.clock()
 
         cpu_percent: float | None = None
-        cpu = r.cpu_times()
+        cpu = _guard("cpu_times", r.cpu_times)
         if cpu and self._prev_cpu and now - self._prev_cpu_at >= 1 and cpu[1] > self._prev_cpu[1]:
             d_total = cpu[1] - self._prev_cpu[1]
             d_idle = cpu[0] - self._prev_cpu[0]
@@ -304,14 +336,14 @@ class HostSampler:
         if cpu and (self._prev_cpu is None or now - self._prev_cpu_at >= 1):
             self._prev_cpu, self._prev_cpu_at = cpu, now
 
-        load = r.loadavg()
-        cores = r.cpu_count()
+        load = _guard("loadavg", r.loadavg)
+        cores = _guard("cpu_count", r.cpu_count)
         if cpu_percent is None and load and cores:
             cpu_percent = round(min(100.0, 100 * load[0] / cores), 1)
 
         # None = counters unreadable (e.g. Android denies /proc/net/dev); None rates = first sample.
         net: dict[str, float | None] | None = None
-        counters = r.net_bytes()
+        counters = _guard("net_bytes", r.net_bytes)
         if counters:
             net = {"rx_bps": None, "tx_bps": None}
             if self._prev_net and now - self._prev_net[0] >= 1:
@@ -323,11 +355,12 @@ class HostSampler:
             if self._prev_net is None or now - self._prev_net[0] >= 1:
                 self._prev_net = (now, counters[0], counters[1])
 
-        mem = r.memory()
-        disk = r.storage(self._storage_path)
-        battery = r.battery()
+        mem = _guard("memory", r.memory)
+        disk = _guard("storage", r.storage, self._storage_path)
+        battery = _guard("battery", r.battery)
+        uptime = _guard("uptime", r.uptime)
         snap: dict[str, object] = {
-            "uptime_s": r.uptime(),
+            "uptime_s": uptime,
             "cpu": {
                 "percent": cpu_percent,
                 "load": list(load) if load else None,
