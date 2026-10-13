@@ -260,3 +260,11 @@ def test_build_failure_returns_503() -> None:
         assert _get((host, port), "/healthz")[0] == 200
     finally:
         stop()
+
+
+def test_page_assets_do_not_mention_battery_or_phone(addr: tuple[str, int]) -> None:
+    for path in ("/", "/static/app.js", "/static/app.css"):
+        _, _, body = _get(addr, path)
+        text = body.decode().lower()
+        assert "battery" not in text, path
+        assert "phone" not in text, path
