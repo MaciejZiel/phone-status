@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<base href="{{base}}">
+<title>{{title}}</title>
+<link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/app.css">
+<script src="static/app.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#services">Skip to services</a>
+<header class="top">
+  <div>
+    <h1>{{title}}</h1>
+    <p id="banner" class="banner" data-state="unknown" role="status" aria-live="polite">Loading&hellip;</p>
+  </div>
+  <button id="theme" class="icon-btn" type="button" aria-label="Toggle light and dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+  </button>
+</header>
+<main>
+  <section aria-labelledby="host-h">
+    <h2 id="host-h">Host</h2>
+    <div id="host" class="grid"></div>
+  </section>
+  <section aria-labelledby="services">
+    <h2 id="services">Services</h2>
+    <div id="svc" class="stack"></div>
+  </section>
+</main>
+<footer>
+  <span id="updated">&nbsp;</span>
+  <span>Read-only &middot; refreshes every 15 s</span>
+</footer>
+<noscript><p class="noscript">This page needs JavaScript to show live data.</p></noscript>
+</body>
+</html>
