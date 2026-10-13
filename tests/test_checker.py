@@ -65,3 +65,17 @@ def test_checker_run_once_records_and_keeps_last_metrics(fake_upstream: str) -> 
     assert not latest_b.ok
     assert checker.metric_values("a")[0]["value"] == 7
     assert checker.metric_values("b") == []
+
+
+def test_prune_runs_at_most_hourly() -> None:
+    calls: list[float] = []
+
+    class CountingStore(Store):
+        def prune(self, now: float, retention_days: int) -> int:
+            calls.append(now)
+            return 0
+
+    checker = Checker((), CountingStore(":memory:"), 8)
+    checker.run_once()
+    checker.run_once()
+    assert len(calls) == 1

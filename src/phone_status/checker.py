@@ -18,6 +18,7 @@ from .store import Store
 
 log = logging.getLogger(__name__)
 MAX_BODY = 256 * 1024
+PRUNE_EVERY = 3600.0
 USER_AGENT = f"phone-status/{__version__} (+https://github.com/MaciejZiel/phone-status)"
 
 
@@ -37,6 +38,7 @@ def check_health(url: str, timeout: float) -> CheckResult:
             ok = 200 <= resp.status < 400
             return CheckResult(ok, (time.perf_counter() - start) * 1000, "" if ok else f"HTTP {resp.status}")
     except urllib.error.HTTPError as exc:
+        exc.close()  # releases the underlying connection
         return CheckResult(False, (time.perf_counter() - start) * 1000, f"HTTP {exc.code}")
     except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
         reason = getattr(exc, "reason", exc)
@@ -77,7 +79,7 @@ def fetch_metrics(svc: ServiceConfig) -> list[dict[str, object]] | None:
     try:
         with urllib.request.urlopen(req, timeout=svc.timeout) as resp:
             document = json.loads(resp.read(MAX_BODY))
-    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+    except (urllib.error.URLError, TimeoutError, OSError, ValueError, RecursionError) as exc:
         log.warning("metrics for %s unavailable: %s", svc.id, type(exc).__name__)
         return None
     return pick_metrics(document, svc.metrics)
@@ -101,6 +103,7 @@ class Checker:
         self._clock = clock
         self._lock = threading.Lock()
         self._metric_values: dict[str, list[dict[str, object]]] = {}
+        self._next_prune = 0.0
 
     def _check_one(self, svc: ServiceConfig) -> None:
         result = self._health(svc.health_url, svc.timeout)
@@ -115,7 +118,10 @@ class Checker:
         if self.services:
             with ThreadPoolExecutor(max_workers=min(4, len(self.services))) as pool:
                 list(pool.map(self._check_one, self.services))
-        self._store.prune(self._clock(), self._retention)
+        # Pruning scans the whole table, so once an hour is plenty (monotonic: immune to clock jumps).
+        if time.monotonic() >= self._next_prune:
+            self._store.prune(self._clock(), self._retention)
+            self._next_prune = time.monotonic() + PRUNE_EVERY
 
     def metric_values(self, service_id: str) -> list[dict[str, object]]:
         with self._lock:
