@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import json
 import logging
 import threading
@@ -34,6 +35,45 @@ SECURITY_HEADERS = {
 }
 
 
+# A connection that sends nothing for this long is closed, so idle or slow clients
+# (slowloris) cannot pin worker threads. Behind nginx the proxy absorbs slow clients anyway.
+REQUEST_TIMEOUT = 10.0
+MAX_CONNECTIONS = 64
+
+
+class StatusHTTPServer(ThreadingHTTPServer):
+    """Thread-per-connection server with a hard cap on concurrent connections."""
+
+    daemon_threads = True
+    request_queue_size = 64
+
+    def __init__(
+        self,
+        address: tuple[str, int],
+        handler: type[BaseHTTPRequestHandler],
+        max_connections: int = MAX_CONNECTIONS,
+    ) -> None:
+        super().__init__(address, handler)
+        self._slots = threading.BoundedSemaphore(max_connections)
+
+    def process_request(self, request: Any, client_address: Any) -> None:
+        if not self._slots.acquire(blocking=False):
+            log.warning("connection limit reached, dropping %s", client_address[0])
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._slots.release()
+            raise
+
+    def process_request_thread(self, request: Any, client_address: Any) -> None:
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._slots.release()
+
+
 class CachedJson:
     """Serialises the status document at most once per `ttl` seconds."""
 
@@ -53,21 +93,27 @@ class CachedJson:
 
 
 def make_server(
-    host: str, port: int, base_path: str, build: Callable[[], dict[str, Any]], title: str
-) -> ThreadingHTTPServer:
+    host: str,
+    port: int,
+    base_path: str,
+    build: Callable[[], dict[str, Any]],
+    title: str,
+    max_connections: int = MAX_CONNECTIONS,
+) -> StatusHTTPServer:
     api = CachedJson(build)
     index = (STATIC_DIR / "index.html").read_text().replace("{{base}}", base_path + "/")
-    index = index.replace("{{title}}", title.replace("<", "&lt;").replace(">", "&gt;"))
+    index = index.replace("{{title}}", html.escape(title))
     index_bytes = index.encode()
     assets = {name: (STATIC_DIR / name).read_bytes() for name in STATIC_FILES}
 
     class Handler(BaseHTTPRequestHandler):
-        server_version = "phone-status"
+        server_version = "status"
         sys_version = ""
         protocol_version = "HTTP/1.1"
+        timeout = REQUEST_TIMEOUT
 
-        def log_message(self, fmt: str, *args: Any) -> None:
-            log.debug("%s - %s", self.address_string(), fmt % args)
+        def log_message(self, format: str, *args: Any) -> None:
+            log.debug("%s - %s", self.address_string(), format % args)
 
         def _send(
             self, status: int, body: bytes, ctype: str, cache: str = "no-store", head: bool = False
@@ -89,7 +135,13 @@ def make_server(
             if path == "/healthz":
                 self._send(200, b"ok\n", "text/plain; charset=utf-8", head=head)
             elif path == "/api/status":
-                self._send(200, api.get(), "application/json", "public, max-age=5", head)
+                try:
+                    body = api.get()
+                except Exception:
+                    log.exception("building the status document failed")
+                    self._send(503, b"status unavailable\n", "text/plain; charset=utf-8", head=head)
+                    return
+                self._send(200, body, "application/json", "public, max-age=5", head)
             elif path in ("/", "/index.html"):
                 self._send(200, index_bytes, CONTENT_TYPES[".html"], "public, max-age=60", head)
             elif path.startswith("/static/") and path[8:] in assets:
@@ -106,13 +158,14 @@ def make_server(
             self._route(head=True)
 
         def _deny(self) -> None:
+            # The request body is never read, so the connection cannot be reused safely.
+            self.close_connection = True
             self.send_response(405)
             self.send_header("Allow", "GET, HEAD")
             self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
             self.end_headers()
 
         do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _deny
 
-    server = ThreadingHTTPServer((host, port), Handler)
-    server.daemon_threads = True
-    return server
+    return StatusHTTPServer((host, port), Handler, max_connections)

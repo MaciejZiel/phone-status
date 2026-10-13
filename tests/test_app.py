@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
+import time
 import urllib.error
 import urllib.request
 from collections.abc import Callable, Iterator
@@ -9,6 +11,7 @@ from http.client import HTTPConnection
 
 import pytest
 
+from phone_status import server as server_module
 from phone_status.checker import Checker
 from phone_status.config import ServiceConfig
 from phone_status.host import Battery, HostReaders, HostSampler
@@ -129,3 +132,70 @@ def test_unreachable_after_shutdown_raises() -> None:
             fn()
 
     hit(lambda: urllib.request.urlopen("http://127.0.0.1:1/", timeout=1))
+
+
+def _raw_server(
+    build: Callable[[], dict[str, object]], max_connections: int = 64
+) -> tuple[str, int, Callable[[], None]]:
+    server = make_server("127.0.0.1", 0, "", build, "t", max_connections=max_connections)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+
+    def stop() -> None:
+        server.shutdown()
+        server.server_close()
+
+    return "127.0.0.1", server.server_address[1], stop
+
+
+def test_idle_connection_is_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(server_module, "REQUEST_TIMEOUT", 0.3)
+    host, port, stop = _raw_server(dict)
+    try:
+        with socket.create_connection((host, port), timeout=5) as sock:
+            sock.sendall(b"GET / HTTP/1.1\r\n")  # never finishes the headers
+            assert sock.recv(1024) == b""  # server hangs up instead of waiting forever
+    finally:
+        stop()
+
+
+def test_connection_cap_drops_extra_clients() -> None:
+    host, port, stop = _raw_server(dict, max_connections=2)
+    held = [socket.create_connection((host, port), timeout=5) for _ in range(2)]
+    try:
+        time.sleep(0.2)
+        with socket.create_connection((host, port), timeout=5) as extra:
+            extra.sendall(b"GET /healthz HTTP/1.1\r\nHost: x\r\n\r\n")
+            assert extra.recv(1024) == b""
+        held.pop().close()
+        time.sleep(0.2)
+        assert _get((host, port), "/healthz")[0] == 200
+    finally:
+        for sock in held:
+            sock.close()
+        stop()
+
+
+def test_405_closes_connection_without_reading_body(addr: tuple[str, int]) -> None:
+    with socket.create_connection(addr, timeout=5) as sock:
+        sock.sendall(
+            b"POST /api/status HTTP/1.1\r\nHost: x\r\nContent-Length: 30\r\n\r\n"
+            b"GET /smuggled HTTP/1.1\r\nX: y\r\n"
+        )
+        data = b""
+        while chunk := sock.recv(4096):
+            data += chunk
+    assert data.startswith(b"HTTP/1.1 405")
+    assert b"Connection: close" in data
+    assert data.count(b"HTTP/1.1") == 1
+
+
+def test_build_failure_returns_503() -> None:
+    def broken() -> dict[str, object]:
+        raise RuntimeError("db gone")
+
+    host, port, stop = _raw_server(broken)
+    try:
+        assert _get((host, port), "/api/status")[0] == 503
+        assert _get((host, port), "/healthz")[0] == 200
+    finally:
+        stop()
