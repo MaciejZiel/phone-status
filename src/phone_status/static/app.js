@@ -9,11 +9,15 @@
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") root.dataset.theme = saved;
   } catch (_) { /* storage unavailable */ }
+  const systemDark = matchMedia("(prefers-color-scheme: dark)");
+  const effective = () => root.dataset.theme || (systemDark.matches ? "dark" : "light");
+  const syncToggle = () => $("theme").setAttribute("aria-pressed", String(effective() === "dark"));
+  syncToggle();
+  systemDark.addEventListener("change", syncToggle);
   $("theme").addEventListener("click", () => {
-    const dark = matchMedia("(prefers-color-scheme: dark)").matches;
-    const current = root.dataset.theme || (dark ? "dark" : "light");
-    const next = current === "dark" ? "light" : "dark";
+    const next = effective() === "dark" ? "light" : "dark";
     root.dataset.theme = next;
+    syncToggle();
     try { localStorage.setItem("theme", next); } catch (_) { /* ignore */ }
   });
 
