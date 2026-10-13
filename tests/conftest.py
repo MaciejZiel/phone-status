@@ -9,7 +9,7 @@ import pytest
 
 
 class _Handler(BaseHTTPRequestHandler):
-    def log_message(self, *_: object) -> None:
+    def log_message(self, format: str, *args: object) -> None:
         pass
 
     def do_GET(self) -> None:
