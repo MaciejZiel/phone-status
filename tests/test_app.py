@@ -16,7 +16,7 @@ from server_status.checker import Checker
 from server_status.config import ServiceConfig
 from server_status.host import Battery, HostReaders, HostSampler
 from server_status.server import make_server
-from server_status.status import StatusBuilder
+from server_status.status import StatusBuilder, public_host
 from server_status.store import Store
 
 NOW = 5_000_000.0
@@ -86,13 +86,39 @@ def test_status_document(addr: tuple[str, int]) -> None:
     assert len(good["bars_7d"]) == 28
     assert bad["state"] == "down"
     assert bad["error"] == "timeout"
-    assert doc["host"]["battery"]["percent"] == 50.0
+    # coarse figures only: no battery, exact bytes, core count, load average or network rates
+    assert set(doc["host"]) == {"uptime_s", "cpu_percent", "memory_percent", "storage_percent"}
 
 
 def test_no_secrets_in_document(addr: tuple[str, int]) -> None:
     _, _, body = _get(addr, "/api/status")
     text = body.decode()
     assert "http://good/h" not in text  # health URLs stay private
+    for word in ("battery", "phone", "temperature", "charging", "cores", "load"):
+        assert word not in text.lower()
+
+
+def test_public_host_rounds_and_drops() -> None:
+    snap = {
+        "uptime_s": 190_000.7,
+        "cpu": {"percent": 37.4, "load": [1.0, 0.5, 0.2], "cores": 8},
+        "memory": {"total": 8_000_000_000, "available": 1, "used": 5_100_000_000},
+        "storage": {"total": 100, "used": 99, "free": 1},
+        "battery": {"percent": 80.0, "status": "charging", "charging": True, "temperature_c": 31.0},
+        "network": {"rx_bps": 1234.0, "tx_bps": 5.0},
+    }
+    assert public_host(snap) == {
+        "uptime_s": 187_200,  # 52 h
+        "cpu_percent": 35,
+        "memory_percent": 65,
+        "storage_percent": 100,
+    }
+    assert public_host({}) == {
+        "uptime_s": None,
+        "cpu_percent": None,
+        "memory_percent": None,
+        "storage_percent": None,
+    }
 
 
 def test_down_service_error_is_generic_even_for_old_rows() -> None:

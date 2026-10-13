@@ -29,6 +29,36 @@ def public_error(error: str) -> str:
     return GENERIC_ERROR
 
 
+def _round_to(value: object, step: int) -> int | None:
+    if not isinstance(value, int | float):
+        return None
+    return int(max(0, min(100, step * round(value / step))))
+
+
+def _percent(used: object, total: object) -> int | None:
+    if not isinstance(used, int | float) or not isinstance(total, int | float) or total <= 0:
+        return None
+    return _round_to(100 * used / total, 5)
+
+
+def public_host(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """The part of the host snapshot that is served: coarse figures only.
+
+    Uptime is floored to the hour, load and usage are rounded to 5 %. Exact byte counts, core count,
+    load averages, network rates and the battery are collected but never published.
+    """
+    uptime = snapshot.get("uptime_s")
+    cpu = snapshot.get("cpu") or {}
+    mem = snapshot.get("memory") or {}
+    disk = snapshot.get("storage") or {}
+    return {
+        "uptime_s": int(uptime // 3600 * 3600) if isinstance(uptime, int | float) else None,
+        "cpu_percent": _round_to(cpu.get("percent"), 5),
+        "memory_percent": _percent(mem.get("used"), mem.get("total")),
+        "storage_percent": _percent(disk.get("used"), disk.get("total")),
+    }
+
+
 class StatusBuilder:
     def __init__(
         self,
@@ -62,7 +92,7 @@ class StatusBuilder:
             "generated_at": now,
             "check_interval_s": self._interval,
             "summary": {"state": state, "up": up, "down": down, "total": len(services)},
-            "host": self._sampler.snapshot(),
+            "host": public_host(self._sampler.snapshot()),
             "services": services,
         }
 
