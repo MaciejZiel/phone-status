@@ -1,4 +1,4 @@
-# Copy to services.toml (or point PHONE_STATUS_SERVICES_FILE at it) and edit.
+# Copy to services.toml (or point SERVER_STATUS_SERVICES_FILE at it) and edit.
 # health_url: any 2xx/3xx answer counts as up. metrics_url + [[services.metrics]]
 # optionally show values from a JSON document (dotted path, list indexes allowed).
 
