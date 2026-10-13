@@ -108,6 +108,23 @@ def test_index_and_static(addr: tuple[str, int]) -> None:
         assert ctype in h["content-type"]
 
 
+def test_icons_are_images_and_cached(addr: tuple[str, int]) -> None:
+    for path, ctype in (
+        ("/favicon.ico", "image/x-icon"),
+        ("/apple-touch-icon.png", "image/png"),
+        ("/static/favicon.svg", "image/svg+xml"),
+        ("/static/favicon.ico", "image/x-icon"),
+        ("/static/favicon-32x32.png", "image/png"),
+        ("/static/apple-touch-icon.png", "image/png"),
+    ):
+        s, h, body = _get(addr, path)
+        assert s == 200, path
+        assert h["content-type"] == ctype
+        assert h["cache-control"] == "public, max-age=86400"
+        assert body
+    assert _get(addr, "/favicon.ico", "HEAD")[0] == 200
+
+
 def test_base_path_and_prefix_stripped(addr_based: tuple[str, int]) -> None:
     _, _, body = _get(addr_based, "/status/")
     assert b'<base href="/status/">' in body
