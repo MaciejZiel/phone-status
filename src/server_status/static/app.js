@@ -36,15 +36,26 @@
   };
   const level = (pct) => (pct >= 90 ? "bad" : pct >= 75 ? "warn" : "");
 
-  function stat(label, value, unit, sub, pct, inverse) {
+  // `low` = a meter where a small value is the bad one (a charge level).
+  const lowLevel = (pct) => (pct <= 15 ? "bad" : pct <= 30 ? "warn" : "");
+
+  function stat(label, value, unit, sub, pct, low, blurred) {
     const card = h("div", "card");
     card.append(h("div", "label", label));
     const v = h("div", "value num", value);
     if (unit) v.append(" ", h("small", "", unit));
-    card.append(v, h("div", "sub num", sub || ""));
+    const s = h("div", "sub num", sub || "");
+    card.append(v, s);
+    if (blurred) {
+      // Placeholder figures: hidden from assistive technology so they are not read out as real data.
+      v.classList.add("blurred");
+      s.classList.add("blurred");
+      v.setAttribute("aria-hidden", "true");
+      s.setAttribute("aria-hidden", "true");
+    }
     if (pct !== null && pct !== undefined) {
-      const m = h("div", "meter", null, { role: "presentation" });
-      const bar = h("i", inverse ? "" : level(pct));
+      const m = h("div", "meter" + (blurred ? " blurred" : ""), null, { role: "presentation" });
+      const bar = h("i", low ? lowLevel(pct) : level(pct));
       bar.style.setProperty("width", `${Math.max(0, Math.min(100, pct))}%`);
       m.append(bar);
       card.append(m);
@@ -59,13 +70,19 @@
       const d = Math.floor(s / 86400), hr = Math.floor((s % 86400) / 3600);
       return d ? `${d}d ${hr}h` : hr ? `${hr}h` : "<1h";
     };
+    const exact = host.exact === true;
+    const sub = host.sub || {};
     out.push(stat("Uptime", host.uptime_s != null ? uptimeLabel(host.uptime_s) : NA, "", "since last boot"));
-    const usage = (label, pct, sub) => out.push(pct != null
-      ? stat(label, `~${pct}`, "%", sub, pct) : stat(label, NA, "", "unreadable"));
-    usage("CPU", host.cpu_percent, "rounded to 5 %");
-    usage("Memory", host.memory_percent, "in use");
-    usage("Storage", host.storage_percent, "in use");
+    const usage = (label, pct, text) => out.push(pct != null
+      ? stat(label, exact ? nf.format(pct) : `~${pct}`, "%", text, pct) : stat(label, NA, "", "unreadable"));
+    usage("CPU", host.cpu_percent, sub.cpu || "rounded to 5 %");
+    usage("Memory", host.memory_percent, sub.memory || "in use");
+    usage("Storage", host.storage_percent, sub.storage || "in use");
+    const extra = Array.isArray(host.extra) ? host.extra : [];
+    for (const c of extra) out.push(stat(c.label, c.value, c.unit, c.sub, c.pct, c.low, c.placeholder));
     $("host").replaceChildren(...out);
+    const note = $("host-note");
+    if (note) note.hidden = !extra.some((c) => c.placeholder);
   }
 
   const barClass = (r) => (r === null ? "" : r >= 0.995 ? "ok" : r >= 0.9 ? "warn" : "bad");
@@ -123,7 +140,8 @@
 
   async function refresh() {
     try {
-      const res = await fetch("api/status", { headers: { Accept: "application/json" } });
+      const res = await fetch(document.body.dataset.api || "api/status", { headers: { Accept: "application/json" } });
+      if (res.status === 401) { location.assign("admin/login"); return; }
       if (!res.ok) throw new Error(String(res.status));
       const data = await res.json();
       document.body.classList.remove("stale");

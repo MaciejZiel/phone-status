@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<base href="{{base}}">
+<title>{{title}}</title>
+<meta name="theme-color" content="#f6f7f9" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#0d1117" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="static/favicon.ico" sizes="32x32">
+<link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+<link rel="icon" href="static/favicon-32x32.png" type="image/png" sizes="32x32">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png" sizes="180x180">
+<meta name="robots" content="noindex, nofollow">
+<link rel="stylesheet" href="static/app.css">
+<script src="static/app.js" defer></script>
+</head>
+<body data-api="api/admin/status">
+<a class="skip" href="#services">Skip to services</a>
+<header class="top">
+  <div>
+    <h1>{{title}}</h1>
+    <p class="admin-tag">Administrator view</p>
+    <p id="banner" class="banner" data-state="unknown" role="status" aria-live="polite">Loading&hellip;</p>
+  </div>
+  <div class="actions">
+    <form method="post" action="admin/logout"><button class="text-btn" type="submit">Log out</button></form>
+    <button id="theme" class="icon-btn" type="button" aria-label="Dark theme">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
+    </button>
+  </div>
+</header>
+<main>
+  <section aria-labelledby="host-h">
+    <h2 id="host-h">Host</h2>
+    <div id="host" class="grid"></div>
+  </section>
+  <section aria-labelledby="services">
+    <h2 id="services">Services</h2>
+    <div id="svc" class="stack"></div>
+  </section>
+</main>
+<footer>
+  <span id="updated">&nbsp;</span>
+  <span>Administrator view &middot; refreshes every 15 s</span>
+</footer>
+<noscript><p class="noscript">This page needs JavaScript to show live data.</p></noscript>
+</body>
+</html>

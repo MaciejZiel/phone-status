@@ -77,3 +77,20 @@ footer { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6p
 .stale .banner { opacity: .6; }
 @media (max-width: 420px) { .bar-row { grid-template-columns: 32px 1fr 54px; } .badge { margin-left: 20px; } }
 @media (prefers-reduced-motion: reduce) { .meter > i { transition: none; } }
+.note { color: var(--muted); font-size: .8rem; margin: 10px 0 0; }
+.note a { color: inherit; }
+.blurred { filter: blur(7px); user-select: none; pointer-events: none; }
+.actions { display: flex; gap: 8px; align-items: center; }
+.actions form { margin: 0; }
+.text-btn {
+  border: 1px solid var(--line); background: var(--card); color: var(--text); height: 40px; padding: 0 14px;
+  border-radius: 12px; font: inherit; cursor: pointer;
+}
+.text-btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; margin-top: 12px; }
+.admin-tag { margin: 0 0 4px; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; color: var(--accent); font-weight: 650; }
+.login { max-width: 360px; margin-top: 24px; display: grid; }
+.login input {
+  font: inherit; margin-top: 6px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--line);
+  background: var(--bg); color: var(--text);
+}
+.login-msg { color: var(--bad); font-size: .85rem; margin: 8px 0 0; min-height: 1.2em; }

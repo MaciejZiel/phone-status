@@ -15,7 +15,7 @@
 <link rel="stylesheet" href="static/app.css">
 <script src="static/app.js" defer></script>
 </head>
-<body>
+<body data-api="api/status">
 <a class="skip" href="#services">Skip to services</a>
 <header class="top">
   <div>
@@ -30,6 +30,7 @@
   <section aria-labelledby="host-h">
     <h2 id="host-h">Host</h2>
     <div id="host" class="grid"></div>
+    <p id="host-note" class="note" hidden>The blurred values are placeholders. The details are visible to the administrator.</p>
   </section>
   <section aria-labelledby="services">
     <h2 id="services">Services</h2>
