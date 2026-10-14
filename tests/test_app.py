@@ -288,4 +288,5 @@ def test_asset_urls_carry_a_content_version(addr: tuple[str, int]) -> None:
     assert f'static/app.css?v={match.group(1)}"' in page
     # The versioned address still serves the file.
     status, _, asset = _get(addr, f"/static/app.js?v={match.group(1)}")
-    assert status == 200 and asset
+    assert status == 200
+    assert asset
