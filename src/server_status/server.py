@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import logging
@@ -119,16 +120,23 @@ def make_server(
     api = CachedJson(build)
     admin_api = CachedJson(build_admin) if admin and build_admin else None
     admin_enabled = admin_api is not None
+    assets = {name: (STATIC_DIR / name).read_bytes() for name in STATIC_FILES}
+    # A content hash in the asset URLs: a browser or CDN that cached an older app.js or app.css
+    # under the same address would otherwise keep running it for hours after a deploy.
+    assets_version = hashlib.sha256(assets["app.js"] + assets["app.css"]).hexdigest()[:10]
+
+    def render(name: str) -> str:
+        page = (STATIC_DIR / name).read_text().replace("{{base}}", base_path + "/")
+        page = page.replace('href="static/app.css"', f'href="static/app.css?v={assets_version}"')
+        page = page.replace('src="static/app.js"', f'src="static/app.js?v={assets_version}"')
+        return page.replace("{{title}}", html.escape(title))
+
     admin_pages = {}
     if admin_enabled:
         for name in ("admin.html", "login.html"):
-            page = (STATIC_DIR / name).read_text().replace("{{base}}", base_path + "/")
-            admin_pages[name] = page.replace("{{title}}", html.escape(title))
+            admin_pages[name] = render(name)
     cookie_path = base_path or "/"
-    index = (STATIC_DIR / "index.html").read_text().replace("{{base}}", base_path + "/")
-    index = index.replace("{{title}}", html.escape(title))
-    index_bytes = index.encode()
-    assets = {name: (STATIC_DIR / name).read_bytes() for name in STATIC_FILES}
+    index_bytes = render("index.html").encode()
 
     class Handler(BaseHTTPRequestHandler):
         server_version = "status"

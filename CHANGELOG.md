@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Fixed
+- The page, login and administrator pages now load `app.js` and `app.css` with a content hash in the URL, so a browser or CDN
+  that cached an older copy picks up a new deploy immediately.
+
 ### Added
 - Administrator view (`/admin`, `/api/admin/status`) with every collected host figure (power, temperature, exact bytes, cores, load, network)
   and the full text of failed checks, behind a login with `SERVER_STATUS_ADMIN_TOKEN`. Disabled (404) when the token is unset.
