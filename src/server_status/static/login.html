@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<meta name="robots" content="noindex, nofollow">
+<base href="{{base}}">
+<title>{{title}}: administrator</title>
+<link rel="icon" href="static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="static/app.css">
+</head>
+<body>
+<header class="top"><div><h1>{{title}}</h1><p class="admin-tag">Administrator view</p></div></header>
+<main>
+  <form class="card login" method="post" action="admin/login" autocomplete="off">
+    <label class="label" for="token">Access token</label>
+    <input id="token" name="token" type="password" required maxlength="256" autocomplete="current-password" autofocus>
+    <p class="login-msg" role="alert">{{message}}</p>
+    <button class="text-btn primary" type="submit">Log in</button>
+  </form>
+  <p class="note"><a href="./">Back to the public page</a></p>
+</main>
+</body>
+</html>

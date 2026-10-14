@@ -31,7 +31,11 @@
   <img src="docs/screenshots/mobile-dark.png" width="260" alt="Mobile, dark theme">
 </p>
 
-<p align="center"><sub>Taken with <code>playwright-cli</code> against a local run with fake services (<code>tools/run_demo.sh</code>). Desktop: dark or light, following your GitHub theme.</sub></p>
+<p align="center">
+  <img src="docs/screenshots/admin-dark.png" width="520" alt="The administrator view with every host figure">
+</p>
+
+<p align="center"><sub>Taken with <code>playwright-cli</code> against a local run with fake services (<code>tools/run_demo.sh</code>, invented host figures). The last image is the administrator view. Desktop: dark or light, following your GitHub theme.</sub></p>
 
 ## What it shows
 
@@ -41,11 +45,41 @@
   Uptime is computed from the checker's own results stored in SQLite (24 hourly buckets, 28 six-hour buckets).
 - **Metrics**: optional per-service JSON document; configure a URL and the fields to display.
 
-What the public JSON deliberately leaves out: exact byte counts, core count, load averages, network rates
+What the public JSON deliberately leaves out: exact byte counts, core count, load averages, network rates, power and temperature,
 and anything about a failed check except a generic reason (`timeout`, `connection refused`, `HTTP 502`, ...; never a URL, host, port or path).
 The sampler still collects more than it serves; `status.public_host()` is the single place that decides what leaves the process.
 
-Design constraints: no secrets or internal URLs in the page or API, read-only (GET/HEAD only), cached responses, strict CSP,
+The public page does draw four more host cards (Power, Temperature, Load, Network) so it looks the same as the administrator view,
+but their values are fixed made-up placeholders, rendered blurred, with a note that the details are visible to the administrator.
+The real figures are never sent to a public visitor, so removing the blur in the browser reveals nothing.
+
+## Administrator view
+
+For the owner: every figure the sampler collects, behind a login. It is off unless `SERVER_STATUS_ADMIN_TOKEN` is set to a secret of at least 24 characters;
+without it `/admin` and `/api/admin/*` answer 404.
+
+- `/admin/login`: a form (POST over HTTPS) for the token. The token is compared with `hmac.compare_digest`, never logged and never sent back.
+- On success the app sets a random session id in a cookie (`__Secure-ss_admin`: `HttpOnly`, `Secure`, `SameSite=Strict`, scoped to the base path, 12 hours).
+  Sessions live in memory (at most 64), so a restart logs everybody out.
+- Login attempts are limited to 5 per 5 minutes per visitor (`CF-Connecting-IP`, else the socket address); then 429 with `Retry-After`.
+  nginx adds an outer limit (see the deploy notes below).
+- `/admin` shows the full page: exact uptime and CPU, memory and storage in bytes, cores, load averages, power (charge, state, temperature) and network rates,
+  per-service latency and the full text of a failed check. `/api/admin/status` is the same data as JSON. Both send `Cache-Control: no-store`.
+- Without a valid cookie `/admin` redirects to the login and `/api/admin/status` answers 401. `POST /admin/logout` ends the session.
+
+Generate the token on the server and keep it out of the repository and the chat:
+
+```sh
+umask 077
+python3 -c 'import secrets;print(secrets.token_urlsafe(32))' > ~/.server-status-admin-token
+chmod 600 ~/.server-status-admin-token
+```
+
+Reference it from `deploy/termux/env` (which `start.sh` sources): `SERVER_STATUS_ADMIN_TOKEN="$(cat "$HOME/.server-status-admin-token")"`.
+To log in, read the token yourself on the server (`cat ~/.server-status-admin-token`) and paste it into the form.
+To rotate it, write a new file and restart the service.
+
+Design constraints: no secrets or internal URLs in the page or API, read-only for the public (GET/HEAD only; the only POSTs are the administrator login and logout), cached responses, strict CSP,
 no CDN scripts or fonts, standard library only (no runtime dependencies, Python 3.12-3.14).
 
 ## Quick start
@@ -77,6 +111,7 @@ Environment variables (all optional):
 | `SERVER_STATUS_HOST_INTERVAL` | `15` | Seconds between host samples (min 2) |
 | `SERVER_STATUS_RETENTION_DAYS` | `8` | Days of history kept (min 8) |
 | `SERVER_STATUS_STORAGE_PATH` | `~` | Path whose filesystem is shown as storage |
+| `SERVER_STATUS_ADMIN_TOKEN` | unset | Secret for the administrator view (min 24 characters); unset = view disabled |
 | `SERVER_STATUS_LOG` | `INFO` | Log level |
 
 Environment names from before the rename to server-status (the old prefix is named in the deprecation warning) are still read for one release; `SERVER_STATUS_*` wins when both are set.
@@ -107,6 +142,8 @@ Only numbers, booleans and short strings at the configured paths are shown.
 | `/` | The page |
 | `/api/status` | JSON document used by the page (`Cache-Control: public, max-age=5`) |
 | `/healthz` | Liveness probe |
+| `/admin`, `/admin/login`, `/admin/logout` | Administrator page, login form, logout (POST); 404 when no token is set |
+| `/api/admin/status` | Full host data as JSON, session cookie required (`Cache-Control: no-store`) |
 | `/static/*` | Own CSS, JS and icons |
 | `/favicon.ico`, `/apple-touch-icon.png` | Icons for the automatic browser requests (cached for a day) |
 
@@ -133,6 +170,9 @@ sh deploy/termux/start.sh                   # runs python -m server_status in th
   - `nginx-zones.conf`: goes in the `http { }` block. Behind a Cloudflare Tunnel every request arrives from `127.0.0.1`, so the limit is keyed on
     `CF-Connecting-IP` (falling back to the remote address). nginx must be reachable only through the tunnel, or that header can be forged.
   - `nginx-headers.conf`: copy to `snippets/server-status-headers.conf`. CSP, `nosniff`, `frame-ancestors 'none'`, `Referrer-Policy`, also on nginx's own 301/429/502 responses.
+  - `nginx-server-status-admin.conf`, `nginx-headers-admin.conf` (copy to `snippets/server-status-headers-admin.conf`): locations for `/status/admin` and `/status/api/admin`.
+    No caching, GET/HEAD/POST only, 5 login requests per minute per visitor (zone `statuslogin` from `nginx-zones.conf`), the same security headers except
+    `form-action 'self'` so the login form can post.
 - Autostart with Termux:Boot: copy `deploy/termux/boot-server-status` to `~/.termux/boot/server-status` and `chmod +x` it.
 
 What the host readers can read on Android 16 (checked in Termux, without root):

@@ -10,6 +10,5 @@ mkdir -p data
 "$PY" tools/fake_services.py 8191 &
 FAKE=$!
 trap 'kill $FAKE' EXIT INT TERM
-PYTHONPATH=src SERVER_STATUS_PORT=8190 SERVER_STATUS_DB_PATH=data/demo.sqlite \
-  SERVER_STATUS_SERVICES_FILE=tools/demo-services.toml SERVER_STATUS_TITLE="Home server status" \
-  "$PY" -m server_status
+# The host figures are invented (tools/demo_app.py); the administrator token is "demo-token-for-screenshots-only-0000".
+PYTHONPATH=src "$PY" tools/demo_app.py 8190 data/demo.sqlite tools/demo-services.toml

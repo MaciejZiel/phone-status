@@ -11,6 +11,9 @@ from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any
+from urllib.parse import parse_qs
+
+from .admin import AdminAuth, client_key
 
 log = logging.getLogger(__name__)
 
@@ -32,6 +35,10 @@ CSP = (
     "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; "
     "connect-src 'self'; base-uri 'self'; form-action 'none'; frame-ancestors 'none'"
 )
+# The administrator pages post a login form to themselves, so they (and only they) may submit forms.
+ADMIN_CSP = CSP.replace("form-action 'none'", "form-action 'self'")
+COOKIE_NAME = "__Secure-ss_admin"
+MAX_FORM_BYTES = 1024
 SECURITY_HEADERS = {
     "Content-Security-Policy": CSP,
     "X-Content-Type-Options": "nosniff",
@@ -105,8 +112,19 @@ def make_server(
     build: Callable[[], dict[str, Any]],
     title: str,
     max_connections: int = MAX_CONNECTIONS,
+    admin: AdminAuth | None = None,
+    build_admin: Callable[[], dict[str, Any]] | None = None,
 ) -> StatusHTTPServer:
+    """`admin` and `build_admin` together switch the administrator view on; without them it is a 404."""
     api = CachedJson(build)
+    admin_api = CachedJson(build_admin) if admin and build_admin else None
+    admin_enabled = admin_api is not None
+    admin_pages = {}
+    if admin_enabled:
+        for name in ("admin.html", "login.html"):
+            page = (STATIC_DIR / name).read_text().replace("{{base}}", base_path + "/")
+            admin_pages[name] = page.replace("{{title}}", html.escape(title))
+    cookie_path = base_path or "/"
     index = (STATIC_DIR / "index.html").read_text().replace("{{base}}", base_path + "/")
     index = index.replace("{{title}}", html.escape(title))
     index_bytes = index.encode()
@@ -122,22 +140,130 @@ def make_server(
             log.debug("%s - %s", self.address_string(), format % args)
 
         def _send(
-            self, status: int, body: bytes, ctype: str, cache: str = "no-store", head: bool = False
+            self,
+            status: int,
+            body: bytes,
+            ctype: str,
+            cache: str = "no-store",
+            head: bool = False,
+            extra: dict[str, str] | None = None,
+            csp: str = CSP,
         ) -> None:
             self.send_response(status)
             self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.send_header("Cache-Control", cache)
-            for k, v in SECURITY_HEADERS.items():
+            for k, v in {**SECURITY_HEADERS, "Content-Security-Policy": csp}.items():
+                self.send_header(k, v)
+            for k, v in (extra or {}).items():
                 self.send_header(k, v)
             self.end_headers()
             if not head:
                 self.wfile.write(body)
 
-        def _route(self, head: bool) -> None:
+        def _path(self) -> str:
             path = self.path.split("?", 1)[0]
             if base_path and (path == base_path or path.startswith(base_path + "/")):
                 path = path[len(base_path) :] or "/"
+            return path
+
+        # ---- administrator view ------------------------------------------------------------
+        def _session(self) -> str | None:
+            for part in self.headers.get("Cookie", "").split(";"):
+                name, _, value = part.strip().partition("=")
+                if name == COOKIE_NAME:
+                    return value
+            return None
+
+        def _cookie(self, value: str, max_age: int) -> dict[str, str]:
+            return {
+                "Set-Cookie": f"{COOKIE_NAME}={value}; Max-Age={max_age}; Path={cookie_path}; "
+                "HttpOnly; Secure; SameSite=Strict"
+            }
+
+        def _admin_send(self, status: int, body: bytes, ctype: str, head: bool = False, **kw: Any) -> None:
+            self._send(status, body, ctype, head=head, csp=ADMIN_CSP, **kw)
+
+        def _redirect(self, target: str, extra: dict[str, str] | None = None) -> None:
+            headers = {"Location": base_path + target, **(extra or {})}
+            self._admin_send(303, b"", "text/plain; charset=utf-8", extra=headers)
+
+        def _login_page(self, status: int, message: str = "", extra: dict[str, str] | None = None) -> None:
+            page = admin_pages["login.html"].replace("{{message}}", html.escape(message))
+            self._admin_send(status, page.encode(), CONTENT_TYPES[".html"], extra=extra)
+
+        def _admin_get(self, path: str, head: bool) -> None:
+            authed = admin.valid(self._session()) if admin else False
+            if path == "/admin/login":
+                if authed:
+                    self._redirect("/admin")
+                else:
+                    self._login_page(200)
+            elif path in ("/admin", "/admin/"):
+                if authed:
+                    page = admin_pages["admin.html"].encode()
+                    self._admin_send(200, page, CONTENT_TYPES[".html"], head)
+                else:
+                    self._redirect("/admin/login")
+            elif path == "/api/admin/status":
+                if not authed:
+                    self._admin_send(401, b"authentication required\n", "text/plain; charset=utf-8", head)
+                    return
+                try:
+                    body = admin_api.get() if admin_api else b"{}"
+                except Exception:
+                    log.exception("building the administrator document failed")
+                    self._admin_send(503, b"status unavailable\n", "text/plain; charset=utf-8", head)
+                    return
+                self._admin_send(200, body, "application/json", head)
+            else:
+                self._admin_send(404, b"not found\n", "text/plain; charset=utf-8", head)
+
+        def _read_form(self) -> dict[str, list[str]] | None:
+            """The urlencoded body, or None after an error response was sent."""
+            self.close_connection = True
+            site = self.headers.get("Sec-Fetch-Site")
+            if site not in (None, "same-origin", "none"):
+                self._admin_send(403, b"forbidden\n", "text/plain; charset=utf-8")
+                return None
+            try:
+                length = int(self.headers.get("Content-Length", ""))
+            except ValueError:
+                self._admin_send(411, b"length required\n", "text/plain; charset=utf-8")
+                return None
+            if not 0 <= length <= MAX_FORM_BYTES:
+                self._admin_send(413, b"too large\n", "text/plain; charset=utf-8")
+                return None
+            raw = self.rfile.read(length).decode("utf-8", "replace")
+            return parse_qs(raw, max_num_fields=8)
+
+        def _admin_post(self, path: str) -> None:
+            assert admin is not None
+            form = self._read_form()
+            if form is None:
+                return
+            if path == "/admin/logout":
+                admin.logout(self._session())
+                self._redirect("/admin/login", self._cookie("", 0))
+                return
+            client = client_key(self.headers.get("CF-Connecting-IP"), self.client_address[0])
+            outcome, detail = admin.login(client, (form.get("token") or [""])[0])
+            if outcome == "ok":
+                self._redirect("/admin", self._cookie(str(detail), admin.session_ttl))
+            elif outcome == "limited":
+                wait = str(int(float(detail)) + 1)
+                self._login_page(429, "Too many attempts. Try again later.", {"Retry-After": wait})
+            else:
+                self._login_page(401, "That token was not accepted.")
+
+        def _route(self, head: bool) -> None:
+            path = self._path()
+            if path.startswith(("/admin", "/api/admin")):
+                if admin_enabled:
+                    self._admin_get(path, head)
+                else:
+                    self._send(404, b"not found\n", "text/plain; charset=utf-8", head=head)
+                return
             if path == "/healthz":
                 self._send(200, b"ok\n", "text/plain; charset=utf-8", head=head)
             elif path == "/api/status":
@@ -176,6 +302,21 @@ def make_server(
             self.send_header("Connection", "close")
             self.end_headers()
 
-        do_POST = do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _deny
+        def do_POST(self) -> None:
+            path = self._path()
+            if path.startswith(("/admin", "/api/admin")):
+                if not admin_enabled:
+                    self.close_connection = True
+                    self._send(
+                        404, b"not found\n", "text/plain; charset=utf-8", extra={"Connection": "close"}
+                    )
+                elif path in ("/admin/login", "/admin/logout"):
+                    self._admin_post(path)
+                else:
+                    self._deny()
+            else:
+                self._deny()
+
+        do_PUT = do_DELETE = do_PATCH = do_OPTIONS = _deny
 
     return StatusHTTPServer((host, port), Handler, max_connections)

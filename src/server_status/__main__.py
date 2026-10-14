@@ -9,6 +9,7 @@ import sys
 import threading
 from collections.abc import Callable
 
+from .admin import AdminAuth
 from .checker import Checker
 from .config import ConfigError, env_setting, load_settings
 from .host import HostSampler
@@ -46,7 +47,16 @@ def main() -> int:
     sampler = HostSampler(storage_path=settings.storage_path)
     checker = Checker(settings.services, store, settings.retention_days)
     builder = StatusBuilder(settings.title, sampler, checker, store, settings.check_interval)
-    server = make_server(settings.host, settings.port, settings.base_path, builder.build, settings.title)
+    admin = AdminAuth.from_token(os.environ.get("SERVER_STATUS_ADMIN_TOKEN"))
+    server = make_server(
+        settings.host,
+        settings.port,
+        settings.base_path,
+        builder.build,
+        settings.title,
+        admin=admin,
+        build_admin=builder.build_admin,
+    )
 
     stop = threading.Event()
     periodic(stop, settings.host_interval, sampler.sample, "host-sampler")
@@ -58,6 +68,7 @@ def main() -> int:
 
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
+    log.info("administrator view %s", "enabled" if admin else "disabled")
     log.info(
         "serving on http://%s:%s%s with %d service(s)",
         settings.host,
