@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import re
 import socket
 import threading
 import time
@@ -277,3 +278,15 @@ def test_page_assets_do_not_mention_battery_or_phone(addr: tuple[str, int]) -> N
         text = body.decode().lower()
         assert "battery" not in text, path
         assert "phone" not in text, path
+
+
+def test_asset_urls_carry_a_content_version(addr: tuple[str, int]) -> None:
+    _, _, body = _get(addr, "/")
+    page = body.decode()
+    match = re.search(r'static/app\.js\?v=([0-9a-f]{10})"', page)
+    assert match, page
+    assert f'static/app.css?v={match.group(1)}"' in page
+    # The versioned address still serves the file.
+    status, _, asset = _get(addr, f"/static/app.js?v={match.group(1)}")
+    assert status == 200
+    assert asset
