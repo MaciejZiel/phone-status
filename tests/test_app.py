@@ -86,15 +86,17 @@ def test_status_document(addr: tuple[str, int]) -> None:
     assert len(good["bars_7d"]) == 28
     assert bad["state"] == "down"
     assert bad["error"] == "timeout"
-    # coarse figures only: no battery, exact bytes, core count, load average or network rates
-    assert set(doc["host"]) == {"uptime_s", "cpu_percent", "memory_percent", "storage_percent"}
+    # coarse figures plus fixed placeholder cards; nothing else about the host
+    assert set(doc["host"]) == {"uptime_s", "cpu_percent", "memory_percent", "storage_percent", "extra"}
+    assert doc["host"]["extra"]
+    assert all(card["placeholder"] for card in doc["host"]["extra"])
 
 
 def test_no_secrets_in_document(addr: tuple[str, int]) -> None:
     _, _, body = _get(addr, "/api/status")
     text = body.decode()
     assert "http://good/h" not in text  # health URLs stay private
-    for word in ("battery", "phone", "temperature", "charging", "cores", "load"):
+    for word in ("battery", "phone", "android", "termux", "charging", "cores", "50.0", "31.0 "):
         assert word not in text.lower()
 
 
@@ -107,13 +109,20 @@ def test_public_host_rounds_and_drops() -> None:
         "battery": {"percent": 80.0, "status": "charging", "charging": True, "temperature_c": 31.0},
         "network": {"rx_bps": 1234.0, "tx_bps": 5.0},
     }
-    assert public_host(snap) == {
+    host = public_host(snap)
+    extra = host.pop("extra")
+    assert host == {
         "uptime_s": 187_200,  # 52 h
         "cpu_percent": 35,
         "memory_percent": 65,
         "storage_percent": 100,
     }
-    assert public_host({}) == {
+    # placeholders are constants: they do not change with the sampled values
+    assert extra == public_host({})["extra"]
+    assert "80.0" not in str(extra)
+    empty = public_host({})
+    empty.pop("extra")
+    assert empty == {
         "uptime_s": None,
         "cpu_percent": None,
         "memory_percent": None,
